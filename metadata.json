@@ -1,0 +1,6 @@
+{
+  "name": "Question Solver",
+  "description": "An interactive web application powered by AI designed to analyze, solve, and explain multiple choice, yes-no, matching, and short answer questions from text or image inputs.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

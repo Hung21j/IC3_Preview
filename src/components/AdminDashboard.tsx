@@ -23,12 +23,22 @@ import {
   AlertCircle,
   FileSpreadsheet,
   Activity,
-  Layers
+  Layers,
+  KeyRound,
+  Download,
+  Upload,
+  Copy,
+  CheckCheck
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { User, SessionLog, ExamHistoryItem } from "../types";
 import { IC3Question, IC3_QUESTIONS } from "../data/ic3Questions";
 import { apiService } from "../services/apiService";
+import { 
+  parseBulkStudentsInput, 
+  exportToCsvSheet, 
+  ParsedStudentRow 
+} from "../utils/sheetExportUtils";
 
 interface AdminDashboardProps {
   currentUser: User;
@@ -94,6 +104,19 @@ export default function AdminDashboard({
   const [newClass, setNewClass] = useState("");
   const [newSchool, setNewSchool] = useState("");
   const [newRole, setNewRole] = useState<"student" | "admin">("student");
+
+  // Modal: Bulk Add Users from Sheet
+  const [showBulkModal, setShowBulkModal] = useState(false);
+  const [bulkRawText, setBulkRawText] = useState("");
+  const [bulkDefaultClass, setBulkDefaultClass] = useState("");
+  const [bulkDefaultSchool, setBulkDefaultSchool] = useState("");
+  const [bulkPreview, setBulkPreview] = useState<ParsedStudentRow[]>([]);
+  const [isProcessingBulk, setIsProcessingBulk] = useState(false);
+
+  // Modal: Change Password
+  const [changePasswordUser, setChangePasswordUser] = useState<User | null>(null);
+  const [newPasswordInput, setNewPasswordInput] = useState("123");
+  const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
 
   // Add Question Form State
   const [qLevelId, setQLevelId] = useState<"level-1" | "level-2" | "level-3">("level-1");
@@ -186,6 +209,154 @@ export default function AdminDashboard({
     } catch (err: any) {
       alert(err.message || "Lỗi xóa người dùng.");
     }
+  };
+
+  // Change User Password Handler
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!changePasswordUser) return;
+    if (!newPasswordInput.trim()) {
+      alert("Vui lòng nhập mật khẩu mới.");
+      return;
+    }
+
+    setIsUpdatingPassword(true);
+    try {
+      await apiService.updateUserPassword(changePasswordUser.id, newPasswordInput.trim());
+      notify(`Đã cập nhật mật khẩu cho học sinh "${changePasswordUser.name}" (@${changePasswordUser.username}) thành công!`);
+      setChangePasswordUser(null);
+      setNewPasswordInput("123");
+    } catch (err: any) {
+      alert(err.message || "Lỗi đổi mật khẩu.");
+    } finally {
+      setIsUpdatingPassword(false);
+    }
+  };
+
+  // Bulk Input Parsing
+  const handleBulkTextChange = (text: string, defClass = bulkDefaultClass, defSchool = bulkDefaultSchool) => {
+    setBulkRawText(text);
+    const existing = new Set<string>(users.map((u) => u.username.toLowerCase()));
+    const parsed = parseBulkStudentsInput(text, defClass, defSchool, existing);
+    setBulkPreview(parsed);
+  };
+
+  // Submit Bulk Creation
+  const handleCreateBulkUsers = async () => {
+    if (bulkPreview.length === 0) {
+      alert("Không có học sinh nào trong danh sách.");
+      return;
+    }
+
+    setIsProcessingBulk(true);
+    try {
+      const payload = bulkPreview.map((p) => ({
+        name: p.name,
+        username: p.username,
+        password: p.password || "123",
+        className: p.className,
+        school: p.school
+      }));
+
+      const res = await apiService.createBulkUsers(payload);
+      notify(`Đã thêm thành công ${res.createdCount} tài khoản học sinh!`);
+      setShowBulkModal(false);
+      setBulkRawText("");
+      setBulkPreview([]);
+      loadData();
+    } catch (err: any) {
+      alert(err.message || "Lỗi tạo danh sách học sinh.");
+    } finally {
+      setIsProcessingBulk(false);
+    }
+  };
+
+  // Export User Account Credentials to CSV / Sheet
+  const handleExportUserAccounts = () => {
+    if (users.length === 0) {
+      alert("Chưa có tài khoản nào để xuất.");
+      return;
+    }
+
+    const headers = [
+      "STT",
+      "Họ và tên",
+      "Tên đăng nhập (Username)",
+      "Mật khẩu mặc định",
+      "Lớp",
+      "Trường học",
+      "Vai trò",
+      "Trạng thái",
+      "Đăng nhập cuối"
+    ];
+
+    const rows = filteredUsers.map((u, idx) => [
+      idx + 1,
+      u.name,
+      u.username,
+      "123",
+      u.className || "",
+      u.school || "",
+      u.role === "admin" ? "Quản trị viên" : "Học sinh",
+      u.isOnline ? "Online" : "Offline",
+      formatTime(u.lastLogin)
+    ]);
+
+    const filename = `Danh_Sach_Tai_Khoan_IC3_${new Date().toISOString().slice(0, 10)}`;
+    exportToCsvSheet(filename, headers, rows);
+  };
+
+  // Export Exam Scores to CSV / Sheet (1 correct answer = 1 point)
+  const handleExportScoresToSheet = () => {
+    if (filteredHistory.length === 0) {
+      alert("Không có dữ liệu bài thi nào để xuất.");
+      return;
+    }
+
+    const headers = [
+      "STT",
+      "Họ và tên học sinh",
+      "Tên đăng nhập (Username)",
+      "Lớp",
+      "Trường học",
+      "Phân môn",
+      "Bộ đề (Subset)",
+      "Chế độ thi",
+      "Điểm đạt được (Mỗi câu đúng = 1 điểm)",
+      "Tổng số câu hỏi",
+      "Tỷ lệ hoàn thành (%)",
+      "Kết quả đánh giá",
+      "Thời gian làm bài",
+      "Ngày giờ nộp bài"
+    ];
+
+    const rows = filteredHistory.map((h, idx) => {
+      // Rule: Mỗi câu đúng = 1 điểm
+      const earnedPoints = h.correctCount;
+      const totalPoints = h.totalCount;
+      const passText = h.scorePercent >= 70 ? "ĐẠT (Passed)" : "CHƯA ĐẠT";
+      const modeText = h.mode === "testing" ? "Thi thử (Testing)" : "Luyện tập (Training)";
+
+      return [
+        idx + 1,
+        h.studentName,
+        h.username,
+        h.className || "",
+        h.school || "",
+        h.level,
+        `Đề ${h.subset}`,
+        modeText,
+        earnedPoints,
+        totalPoints,
+        `${h.scorePercent}%`,
+        passText,
+        formatDuration(h.timeTaken),
+        formatTime(h.timestamp)
+      ];
+    });
+
+    const filename = `Bang_Diem_IC3_${new Date().toISOString().slice(0, 10)}`;
+    exportToCsvSheet(filename, headers, rows);
   };
 
   // Add Custom Question Handler
@@ -557,14 +728,39 @@ export default function AdminDashboard({
                   </select>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => setShowAddUserModal(true)}
-                  className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold font-mono transition flex items-center gap-1.5 shadow-sm active:scale-95 shrink-0"
-                >
-                  <UserPlus className="w-4 h-4" />
-                  <span>Thêm tài khoản mới</span>
-                </button>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={handleExportUserAccounts}
+                    className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold font-mono transition flex items-center gap-1.5 shadow-sm active:scale-95"
+                    title="Xuất danh sách tài khoản học sinh ra file Sheet / Excel"
+                  >
+                    <Download className="w-3.5 h-3.5 text-slate-600" />
+                    <span>Xuất Sheet</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowBulkModal(true);
+                      handleBulkTextChange(bulkRawText);
+                    }}
+                    className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold font-mono transition flex items-center gap-1.5 shadow-sm active:scale-95"
+                    title="Tạo nhanh tài khoản từ danh sách học sinh (Google Sheets / Excel)"
+                  >
+                    <FileSpreadsheet className="w-4 h-4" />
+                    <span>Thêm từ danh sách Sheet</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowAddUserModal(true)}
+                    className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold font-mono transition flex items-center gap-1.5 shadow-sm active:scale-95"
+                  >
+                    <UserPlus className="w-4 h-4" />
+                    <span>Thêm tài khoản mới</span>
+                  </button>
+                </div>
               </div>
 
               {/* Users Table */}
@@ -622,18 +818,32 @@ export default function AdminDashboard({
                             {formatTime(u.lastLogin)}
                           </td>
                           <td className="py-3 px-3 text-right">
-                            {u.username !== "admin" ? (
+                            <div className="flex items-center justify-end gap-1">
                               <button
                                 type="button"
-                                onClick={() => handleDeleteUser(u)}
-                                className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition active:scale-95"
-                                title="Xóa tài khoản"
+                                onClick={() => {
+                                  setChangePasswordUser(u);
+                                  setNewPasswordInput("123");
+                                }}
+                                className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition active:scale-95"
+                                title="Đổi mật khẩu tài khoản"
                               >
-                                <Trash2 className="w-4 h-4" />
+                                <KeyRound className="w-4 h-4" />
                               </button>
-                            ) : (
-                              <span className="text-[10px] text-slate-400 font-mono">Bảo vệ</span>
-                            )}
+
+                              {u.username !== "admin" ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteUser(u)}
+                                  className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition active:scale-95"
+                                  title="Xóa tài khoản"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              ) : (
+                                <span className="text-[10px] text-slate-400 font-mono px-1">Bảo vệ</span>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       ))
@@ -766,6 +976,16 @@ export default function AdminDashboard({
                     <option value="testing">Thi thử (Testing)</option>
                     <option value="training">Luyện tập (Training)</option>
                   </select>
+
+                  <button
+                    type="button"
+                    onClick={handleExportScoresToSheet}
+                    className="py-2 px-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold font-mono transition flex items-center gap-1.5 shadow-sm active:scale-95 shrink-0"
+                    title="Xuất bảng điểm ra file Google Sheets / Excel CSV (1 câu đúng = 1 điểm)"
+                  >
+                    <FileSpreadsheet className="w-3.5 h-3.5" />
+                    <span>Xuất điểm Sheet</span>
+                  </button>
                 </div>
               </div>
 
@@ -777,7 +997,7 @@ export default function AdminDashboard({
                       <th className="py-2.5 px-3">Lớp & Trường</th>
                       <th className="py-2.5 px-3">Phân môn & Đề</th>
                       <th className="py-2.5 px-3">Chế độ</th>
-                      <th className="py-2.5 px-3">Kết quả & Điểm</th>
+                      <th className="py-2.5 px-3">Kết quả & Điểm số (1đ/câu)</th>
                       <th className="py-2.5 px-3">Thời gian làm</th>
                       <th className="py-2.5 px-3">Ngày giờ nộp</th>
                     </tr>
@@ -820,10 +1040,10 @@ export default function AdminDashboard({
                             <td className="py-3 px-3">
                               <div className="flex items-center gap-2">
                                 <span className={`text-base font-black font-mono ${isPass ? "text-emerald-600" : "text-rose-600"}`}>
-                                  {h.scorePercent}%
+                                  {h.correctCount}/{h.totalCount} đ
                                 </span>
-                                <span className="text-[11px] font-mono text-slate-500">
-                                  ({h.correctCount}/{h.totalCount} câu)
+                                <span className="text-[11px] font-mono font-bold text-slate-500">
+                                  ({h.scorePercent}%)
                                 </span>
                               </div>
                             </td>
@@ -1327,6 +1547,257 @@ export default function AdminDashboard({
                   className="py-2.5 px-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold font-mono transition uppercase shadow-md shadow-indigo-600/20"
                 >
                   Tạo tài khoản
+                </button>
+              </div>
+            </form>
+          </motion.div>
+        </div>
+      )}
+
+      {/* MODAL 2: BULK ADD USERS FROM SHEET / EXCEL */}
+      {showBulkModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full p-6 space-y-4 max-h-[90vh] flex flex-col"
+          >
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg">
+                  <FileSpreadsheet className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-black text-slate-800 text-base">Thêm danh sách học sinh từ Sheet</h3>
+                  <p className="text-xs text-slate-500">
+                    Tự động sinh Username dạng viết tắt (VD: Nguyễn Hoàng Long &rarr; <span className="font-mono text-indigo-600 font-bold">nhlong</span>, pass mặc định: <span className="font-mono font-bold">123</span>)
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowBulkModal(false)}
+                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[10px] font-extrabold uppercase font-mono text-slate-500 mb-1">
+                  Lớp mặc định (nếu dòng chưa có)
+                </label>
+                <input
+                  type="text"
+                  value={bulkDefaultClass}
+                  onChange={(e) => {
+                    setBulkDefaultClass(e.target.value);
+                    handleBulkTextChange(bulkRawText, e.target.value, bulkDefaultSchool);
+                  }}
+                  placeholder="Ví dụ: 6A3"
+                  className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 focus:bg-white focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-extrabold uppercase font-mono text-slate-500 mb-1">
+                  Trường học mặc định (nếu dòng chưa có)
+                </label>
+                <input
+                  type="text"
+                  value={bulkDefaultSchool}
+                  onChange={(e) => {
+                    setBulkDefaultSchool(e.target.value);
+                    handleBulkTextChange(bulkRawText, bulkDefaultClass, e.target.value);
+                  }}
+                  placeholder="Ví dụ: THCS Trưng Vương"
+                  className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 focus:bg-white focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1 flex-1 min-h-[140px] flex flex-col">
+              <div className="flex items-center justify-between">
+                <label className="block text-[10px] font-extrabold uppercase font-mono text-slate-500">
+                  Dán nội dung từ Google Sheets / Excel (Mỗi học sinh 1 dòng)
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const sample = "Nguyễn Hoàng Long\t6A3\tTHCS Trưng Vương\nTrần Minh Anh\t6A3\tTHCS Trưng Vương\nLê Tuấn Kiệt\t6A3\tTHCS Trưng Vương\nPhạm Quỳnh Chi\t6A3\tTHCS Trưng Vương";
+                    handleBulkTextChange(sample);
+                  }}
+                  className="text-[11px] text-emerald-600 hover:text-emerald-700 font-semibold underline"
+                >
+                  Dán mẫu thử
+                </button>
+              </div>
+              <textarea
+                rows={5}
+                value={bulkRawText}
+                onChange={(e) => handleBulkTextChange(e.target.value)}
+                placeholder={"Cách 1: Sao chép các ô từ Excel/Sheets rồi dán vào đây\nCách 2: Chỉ cần nhập danh sách tên (mỗi dòng 1 tên):\nNguyễn Hoàng Long\nTrần Minh Anh\nPhan Quốc Hưng"}
+                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono text-slate-800 focus:bg-white focus:outline-none focus:border-emerald-500 flex-1 resize-none"
+              />
+            </div>
+
+            {/* Preview Section */}
+            {bulkPreview.length > 0 && (
+              <div className="border border-slate-200 rounded-xl overflow-hidden max-h-[180px] flex flex-col">
+                <div className="bg-slate-50 px-3 py-1.5 border-b border-slate-200 flex items-center justify-between text-xs font-mono font-bold text-slate-700">
+                  <span>Xem trước danh sách ({bulkPreview.length} học sinh)</span>
+                  <span className="text-[10px] text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                    Sẵn sàng tạo
+                  </span>
+                </div>
+                <div className="overflow-y-auto divide-y divide-slate-100 text-xs">
+                  {bulkPreview.map((row, i) => (
+                    <div key={i} className="px-3 py-1.5 flex items-center justify-between gap-2 hover:bg-slate-50">
+                      <div className="flex items-center gap-2">
+                        <span className="text-slate-400 font-mono text-[10px] w-5">{i + 1}.</span>
+                        <span className="font-bold text-slate-800">{row.name}</span>
+                        {(row.className || row.school) && (
+                          <span className="text-[10px] text-slate-500">
+                            ({row.className ? `Lớp ${row.className}` : ""}{row.school ? ` - ${row.school}` : ""})
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 font-mono text-[11px]">
+                        <span className="bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded font-bold border border-indigo-150">
+                          @{row.username}
+                        </span>
+                        <span className="bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded text-[10px]">
+                          Pass: {row.password}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowBulkModal(false)}
+                className="py-2.5 px-3 border border-slate-200 rounded-lg text-xs font-bold font-mono text-slate-500 hover:bg-slate-50 transition uppercase"
+              >
+                Hủy bỏ
+              </button>
+              <button
+                type="button"
+                onClick={handleCreateBulkUsers}
+                disabled={isProcessingBulk || bulkPreview.length === 0}
+                className="py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-lg text-xs font-bold font-mono transition uppercase shadow-md shadow-emerald-600/20 flex items-center justify-center gap-1.5"
+              >
+                {isProcessingBulk ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Đang tạo...</span>
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-4 h-4" />
+                    <span>Tạo {bulkPreview.length} tài khoản</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* MODAL 3: CHANGE USER PASSWORD */}
+      {changePasswordUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-4"
+          >
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg">
+                  <KeyRound className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-black text-slate-800 text-base">Đổi mật khẩu tài khoản</h3>
+                  <p className="text-xs text-slate-500">
+                    Cập nhật mật khẩu cho học sinh
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setChangePasswordUser(null)}
+                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
+              <div className="text-xs text-slate-500">Tài khoản:</div>
+              <div className="font-bold text-slate-800 text-sm">{changePasswordUser.name}</div>
+              <div className="text-xs font-mono text-indigo-600">@{changePasswordUser.username}</div>
+              {changePasswordUser.className && (
+                <div className="text-[11px] text-slate-600">Lớp: {changePasswordUser.className} - {changePasswordUser.school}</div>
+              )}
+            </div>
+
+            <form onSubmit={handleChangePassword} className="space-y-4">
+              <div className="space-y-1">
+                <label className="block text-[10px] font-extrabold uppercase font-mono text-slate-500">
+                  Mật khẩu mới
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={newPasswordInput}
+                  onChange={(e) => setNewPasswordInput(e.target.value)}
+                  placeholder="Nhập mật khẩu mới..."
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-mono font-bold text-slate-800 focus:bg-white focus:outline-none focus:border-indigo-500"
+                />
+                <div className="flex gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setNewPasswordInput("123")}
+                    className="text-[10px] font-mono px-2 py-0.5 bg-slate-100 hover:bg-slate-200 rounded text-slate-600"
+                  >
+                    Mặc định: 123
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNewPasswordInput("123456")}
+                    className="text-[10px] font-mono px-2 py-0.5 bg-slate-100 hover:bg-slate-200 rounded text-slate-600"
+                  >
+                    123456
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setChangePasswordUser(null)}
+                  className="py-2.5 px-3 border border-slate-200 rounded-lg text-xs font-bold font-mono text-slate-500 hover:bg-slate-50 transition uppercase"
+                >
+                  Hủy bỏ
+                </button>
+                <button
+                  type="submit"
+                  disabled={isUpdatingPassword}
+                  className="py-2.5 px-3 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg text-xs font-bold font-mono transition uppercase shadow-md shadow-indigo-600/20 flex items-center justify-center gap-1.5"
+                >
+                  {isUpdatingPassword ? (
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Check className="w-4 h-4" />
+                  )}
+                  <span>Lưu mật khẩu</span>
                 </button>
               </div>
             </form>

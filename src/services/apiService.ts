@@ -512,6 +512,124 @@ export const apiService = {
     return newUser;
   },
 
+  // Admin: Update User Password
+  async updateUserPassword(userId: string, newPassword: string): Promise<void> {
+    if (!newPassword || newPassword.trim().length === 0) {
+      throw new Error("Mật khẩu không được để trống.");
+    }
+
+    // Try backend
+    const result = await safeFetchJson<{ success: boolean; error?: string }>(
+      `/api/admin/users/${userId}/password`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: newPassword.trim() })
+      }
+    );
+
+    if (result.status === 400 || result.status === 404) {
+      throw new Error(result.error || "Không thể đổi mật khẩu.");
+    }
+
+    // Update in local DB as fallback and sync
+    const localUsers = getLocalUsers();
+    const target = localUsers.find((u) => u.user.id === userId);
+    if (target) {
+      target.password = newPassword.trim();
+      saveLocalUsers(localUsers);
+    }
+  },
+
+  // Admin: Create Bulk Users (from Sheet/Excel)
+  async createBulkUsers(
+    studentList: Array<{
+      name: string;
+      username: string;
+      password?: string;
+      className?: string;
+      school?: string;
+    }>
+  ): Promise<{ createdCount: number; createdUsers: User[]; skippedCount: number }> {
+    if (!Array.isArray(studentList) || studentList.length === 0) {
+      return { createdCount: 0, createdUsers: [], skippedCount: 0 };
+    }
+
+    // 1. Try backend
+    const result = await safeFetchJson<{
+      success: boolean;
+      createdCount: number;
+      createdUsers: User[];
+      skippedUsers: any[];
+    }>("/api/admin/users/bulk", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ users: studentList })
+    });
+
+    if (result.ok && result.data?.success && Array.isArray(result.data.createdUsers)) {
+      // Sync newly created users to local DB
+      const localUsers = getLocalUsers();
+      for (const u of result.data.createdUsers) {
+        const item = studentList.find((s) => s.username.toLowerCase() === u.username.toLowerCase());
+        const pwd = item?.password || "123";
+        if (!localUsers.some((x) => x.user.username.toLowerCase() === u.username.toLowerCase())) {
+          localUsers.push({ user: u, password: pwd });
+        }
+      }
+      saveLocalUsers(localUsers);
+
+      return {
+        createdCount: result.data.createdCount,
+        createdUsers: result.data.createdUsers,
+        skippedCount: result.data.skippedUsers?.length || 0
+      };
+    }
+
+    // 2. Static / GitHub Pages Fallback: Create locally in localStorage
+    const localUsers = getLocalUsers();
+    const createdUsers: User[] = [];
+    let skippedCount = 0;
+
+    for (const item of studentList) {
+      const cleanUsername = item.username.trim().toLowerCase();
+      const cleanName = item.name.trim();
+      const pwd = (item.password || "123").trim();
+
+      if (!cleanUsername || !cleanName) {
+        skippedCount++;
+        continue;
+      }
+
+      // Check duplicate
+      if (localUsers.some((u) => u.user.username.toLowerCase() === cleanUsername)) {
+        skippedCount++;
+        continue;
+      }
+
+      const newUser: User = {
+        id: `usr-loc-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        username: cleanUsername,
+        name: cleanName,
+        className: (item.className || "").trim(),
+        school: (item.school || "").trim(),
+        role: "student",
+        createdAt: new Date().toISOString(),
+        isOnline: false
+      };
+
+      localUsers.push({ user: newUser, password: pwd });
+      createdUsers.push(newUser);
+    }
+
+    saveLocalUsers(localUsers);
+    return {
+      createdCount: createdUsers.length,
+      createdUsers,
+      skippedCount
+    };
+  },
+
   // Admin: Delete User
   async deleteUser(userId: string): Promise<void> {
     // Try backend

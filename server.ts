@@ -398,6 +398,77 @@ app.post("/api/admin/users", (req, res) => {
   }
 });
 
+// Admin updates user password
+app.patch("/api/admin/users/:id/password", (req, res) => {
+  try {
+    const { id } = req.params;
+    const { password } = req.body;
+    if (!password || String(password).trim().length === 0) {
+      return res.status(400).json({ success: false, error: "Mật khẩu mới không được để trống." });
+    }
+
+    const updated = db.updateUser(id, { password: String(password).trim() });
+    if (!updated) {
+      return res.status(404).json({ success: false, error: "Không tìm thấy người dùng." });
+    }
+
+    const { password: _, ...safe } = updated;
+    return res.json({ success: true, user: safe });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message || "Lỗi cập nhật mật khẩu." });
+  }
+});
+
+// Admin creates bulk users (e.g. from Excel/Sheet)
+app.post("/api/admin/users/bulk", (req, res) => {
+  try {
+    const { users } = req.body;
+    if (!Array.isArray(users) || users.length === 0) {
+      return res.status(400).json({ success: false, error: "Danh sách học sinh không hợp lệ." });
+    }
+
+    const createdUsers: any[] = [];
+    const skippedUsers: { username: string; reason: string }[] = [];
+
+    for (const item of users) {
+      const cleanUsername = String(item.username || "").trim().toLowerCase();
+      const cleanName = String(item.name || "").trim();
+      const cleanPassword = String(item.password || "123").trim();
+
+      if (!cleanUsername || !cleanName) {
+        skippedUsers.push({ username: cleanUsername || "unknown", reason: "Thiếu tên hoặc username" });
+        continue;
+      }
+
+      if (db.findUserByUsername(cleanUsername)) {
+        skippedUsers.push({ username: cleanUsername, reason: "Đã tồn tại" });
+        continue;
+      }
+
+      const created = db.addUser({
+        username: cleanUsername,
+        password: cleanPassword,
+        name: cleanName,
+        className: String(item.className || "").trim(),
+        school: String(item.school || "").trim(),
+        role: "student"
+      });
+
+      const { password: _, ...safe } = created;
+      createdUsers.push(safe);
+    }
+
+    return res.json({
+      success: true,
+      createdCount: createdUsers.length,
+      createdUsers,
+      skippedUsers
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message || "Lỗi tạo danh sách người dùng." });
+  }
+});
+
 // Admin deletes user
 app.delete("/api/admin/users/:id", (req, res) => {
   try {

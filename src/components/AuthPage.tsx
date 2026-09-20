@@ -361,45 +361,10 @@ export default function AuthPage({ onAuthSuccess }: AuthPageProps) {
               )}
             </AnimatePresence>
 
-            {/* Quick Demo Access Bar */}
-            <div className="mt-6 pt-5 border-t border-slate-100">
-              <div className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider mb-2 text-center">
-                Đăng nhập nhanh tài khoản mẫu:
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => fillQuickAccount("admin", "admin123")}
-                  className="py-1.5 px-2 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 rounded-lg text-[10px] font-bold font-mono transition text-left flex items-center gap-1.5"
-                >
-                  <ShieldCheck className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                  <div className="truncate">
-                    <div className="font-extrabold text-amber-800">Admin</div>
-                    <div className="text-[9px] text-amber-600">admin / admin123</div>
-                  </div>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => fillQuickAccount("hoanglong", "123")}
-                  className="py-1.5 px-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-900 border border-indigo-200 rounded-lg text-[10px] font-bold font-mono transition text-left flex items-center gap-1.5"
-                >
-                  <GraduationCap className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
-                  <div className="truncate">
-                    <div className="font-extrabold text-indigo-800">Học sinh</div>
-                    <div className="text-[9px] text-indigo-600">hoanglong / 123</div>
-                  </div>
-                </button>
-              </div>
-            </div>
+            
 
           </div>
         </motion.div>
-
-        <div className="text-center mt-4 space-y-1 text-[10px] text-slate-400 font-mono">
-          <div>IC3 Digital Literacy Certification Portal • Chuẩn khảo thí Quốc tế</div>
-          <div className="text-slate-400/80">Hỗ trợ đầy đủ cả trên Máy chủ và Xuất tĩnh (GitHub Pages)</div>
-        </div>
       </div>
     </div>
   );

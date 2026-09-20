@@ -720,7 +720,7 @@ export const apiService = {
     type: "multiple_choice" | "yes_no" | "matching";
     text: string;
     options?: string[];
-    correctAnswerText: string;
+    correctAnswerText?: string;
     correctKeys?: string[];
     pairs?: { left: string; right: string }[];
     createdBy?: string;

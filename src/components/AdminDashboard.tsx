@@ -95,6 +95,7 @@ export default function AdminDashboard({
   const [questionSearch, setQuestionSearch] = useState("");
   const [questionLevelFilter, setQuestionLevelFilter] = useState<string>("all");
   const [questionSubsetFilter, setQuestionSubsetFilter] = useState<string>("all");
+  const [questionTypeFilter, setQuestionTypeFilter] = useState<string>("all");
 
   // Modal: Add User
   const [showAddUserModal, setShowAddUserModal] = useState(false);
@@ -121,14 +122,91 @@ export default function AdminDashboard({
   // Add Question Form State
   const [qLevelId, setQLevelId] = useState<"level-1" | "level-2" | "level-3">("level-1");
   const [qSubsetId, setQSubsetId] = useState<"GM1" | "GM2" | "OT1" | "OT2" | "OT3" | "OT4" | "OT5">("GM1");
-  const [qType, setQType] = useState<"multiple_choice" | "yes_no">("multiple_choice");
+  const [qType, setQType] = useState<"multiple_choice" | "yes_no" | "matching">("multiple_choice");
   const [qText, setQText] = useState("");
-  const [optA, setOptA] = useState("");
-  const [optB, setOptB] = useState("");
-  const [optC, setOptC] = useState("");
-  const [optD, setOptD] = useState("");
-  const [correctKey, setCorrectKey] = useState("A");
+  // MC Subtype & Dynamic Options
+  const [mcSubtype, setMcSubtype] = useState<"single" | "multiple">("single");
+  const [mcOptions, setMcOptions] = useState<string[]>(["", "", "", ""]);
+  const [mcCorrectKeys, setMcCorrectKeys] = useState<string[]>(["A"]);
+  const [correctKey, setCorrectKey] = useState("True"); // for Yes/No
   const [correctAnswerNote, setCorrectAnswerNote] = useState("");
+  const [matchingPairs, setMatchingPairs] = useState<Array<{ left: string; right: string }>>([
+    { left: "", right: "" },
+    { left: "", right: "" },
+    { left: "", right: "" }
+  ]);
+
+  const updateMcOption = (index: number, value: string) => {
+    setMcOptions((prev) => {
+      const copy = [...prev];
+      copy[index] = value;
+      return copy;
+    });
+  };
+
+  const addMcOption = () => {
+    if (mcOptions.length >= 10) {
+      alert("Tối đa 10 phương án lựa chọn cho câu hỏi trắc nghiệm.");
+      return;
+    }
+    setMcOptions((prev) => [...prev, ""]);
+  };
+
+  const removeMcOption = (index: number) => {
+    if (mcOptions.length <= 2) {
+      alert("Câu hỏi trắc nghiệm cần tối thiểu 2 phương án lựa chọn.");
+      return;
+    }
+    const removedLetter = String.fromCharCode(65 + index);
+    setMcOptions((prev) => prev.filter((_, i) => i !== index));
+    setMcCorrectKeys((prev) => {
+      const filtered = prev.filter((k) => k !== removedLetter);
+      return filtered.length > 0 ? filtered : ["A"];
+    });
+  };
+
+  const toggleMcCorrectKey = (key: string) => {
+    if (mcSubtype === "single") {
+      setMcCorrectKeys([key]);
+    } else {
+      setMcCorrectKeys((prev) => {
+        if (prev.includes(key)) {
+          if (prev.length <= 1) {
+            alert("Phải có ít nhất 1 đáp án đúng được chọn.");
+            return prev;
+          }
+          return prev.filter((k) => k !== key);
+        } else {
+          return [...prev, key].sort();
+        }
+      });
+    }
+  };
+
+  const updateMatchingPair = (index: number, field: "left" | "right", value: string) => {
+    setMatchingPairs((prev) => {
+      const copy = [...prev];
+      copy[index] = { ...copy[index], [field]: value };
+      return copy;
+    });
+  };
+
+  const addMatchingPair = () => {
+    if (matchingPairs.length >= 8) {
+      alert("Tối đa 8 cặp ghép nối cho mỗi câu hỏi.");
+      return;
+    }
+    setMatchingPairs((prev) => [...prev, { left: "", right: "" }]);
+  };
+
+  const removeMatchingPair = (index: number) => {
+    if (matchingPairs.length <= 2) {
+      alert("Câu hỏi ghép nối cần tối thiểu 2 cặp đối tượng.");
+      return;
+    }
+    setMatchingPairs((prev) => prev.filter((_, i) => i !== index));
+  };
+
 
   const loadData = async () => {
     setIsLoading(true);
@@ -368,21 +446,47 @@ export default function AdminDashboard({
     }
 
     let options: string[] | undefined = undefined;
-    let finalCorrectKeys = [correctKey];
+    let finalCorrectKeys: string[] | undefined = [correctKey];
+    let pairs: { left: string; right: string }[] | undefined = undefined;
 
     if (qType === "multiple_choice") {
-      if (!optA.trim() || !optB.trim() || !optC.trim() || !optD.trim()) {
-        alert("Vui lòng nhập đầy đủ 4 phương án A, B, C, D cho câu hỏi trắc nghiệm.");
+      const trimmedOptions = mcOptions.map((o) => o.trim());
+      if (trimmedOptions.some((o) => !o)) {
+        alert("Vui lòng nhập đầy đủ nội dung cho tất cả các phương án lựa chọn.");
         return;
       }
-      options = [
-        `A. ${optA.trim()}`,
-        `B. ${optB.trim()}`,
-        `C. ${optC.trim()}`,
-        `D. ${optD.trim()}`
-      ];
+      if (mcCorrectKeys.length === 0) {
+        alert("Vui lòng chọn ít nhất 1 đáp án đúng cho câu hỏi.");
+        return;
+      }
+      options = trimmedOptions.map((optText, idx) => `${String.fromCharCode(65 + idx)}. ${optText}`);
+      finalCorrectKeys = [...mcCorrectKeys].sort();
     } else if (qType === "yes_no") {
       finalCorrectKeys = [correctKey]; // "True" or "False"
+    } else if (qType === "matching") {
+      const validPairs = matchingPairs
+        .map((p) => ({ left: p.left.trim(), right: p.right.trim() }))
+        .filter((p) => p.left && p.right);
+
+      if (validPairs.length < 2) {
+        alert("Vui lòng nhập đầy đủ ít nhất 2 cặp ghép nối hợp lệ (cả Cột trái và Cột phải).");
+        return;
+      }
+      pairs = validPairs;
+      finalCorrectKeys = undefined;
+    }
+
+    let defaultAnswerText = "";
+    if (qType === "multiple_choice" && options && finalCorrectKeys) {
+      if (finalCorrectKeys.length === 1) {
+        defaultAnswerText = options.find((o) => o.startsWith(finalCorrectKeys![0])) || finalCorrectKeys[0];
+      } else {
+        defaultAnswerText = options.filter((o) => finalCorrectKeys!.includes(o.charAt(0))).join(" | ");
+      }
+    } else if (qType === "yes_no") {
+      defaultAnswerText = correctKey === "True" ? "Đúng (True)" : "Sai (False)";
+    } else if (qType === "matching" && pairs) {
+      defaultAnswerText = pairs.map((p) => `• ${p.left} ➔ ${p.right}`).join("\n");
     }
 
     try {
@@ -392,18 +496,24 @@ export default function AdminDashboard({
         type: qType,
         text: qText.trim(),
         options,
-        correctAnswerText: correctAnswerNote.trim() || (options ? options.find(o => o.startsWith(correctKey)) || "" : correctKey),
+        correctAnswerText: correctAnswerNote.trim() || defaultAnswerText,
         correctKeys: finalCorrectKeys,
+        pairs,
         createdBy: currentUser.username
       });
 
       notify("Đã thêm câu hỏi mới vào ngân hàng đề thi thành công!");
       setQText("");
-      setOptA("");
-      setOptB("");
-      setOptC("");
-      setOptD("");
+      setMcOptions(["", "", "", ""]);
+      setMcCorrectKeys(["A"]);
       setCorrectAnswerNote("");
+      if (qType === "matching") {
+        setMatchingPairs([
+          { left: "", right: "" },
+          { left: "", right: "" },
+          { left: "", right: "" }
+        ]);
+      }
       loadData();
       onQuestionsUpdated?.();
     } catch (err: any) {
@@ -460,7 +570,19 @@ export default function AdminDashboard({
     const matchSearch = q.text.toLowerCase().includes(questionSearch.toLowerCase());
     const matchLevel = questionLevelFilter === "all" || q.levelId === questionLevelFilter;
     const matchSubset = questionSubsetFilter === "all" || q.subsetId === questionSubsetFilter;
-    return matchSearch && matchLevel && matchSubset;
+    let matchType = true;
+    if (questionTypeFilter === "all") {
+      matchType = true;
+    } else if (questionTypeFilter === "multiple_choice") {
+      matchType = q.type === "multiple_choice";
+    } else if (questionTypeFilter === "mc_single") {
+      matchType = q.type === "multiple_choice" && (!q.correctKeys || q.correctKeys.length <= 1);
+    } else if (questionTypeFilter === "mc_multi") {
+      matchType = q.type === "multiple_choice" && !!(q.correctKeys && q.correctKeys.length > 1);
+    } else {
+      matchType = q.type === questionTypeFilter;
+    }
+    return matchSearch && matchLevel && matchSubset && matchType;
   });
 
   const formatDuration = (seconds?: number | null) => {
@@ -1126,17 +1248,17 @@ export default function AdminDashboard({
                     <label className="block text-[10px] font-extrabold uppercase font-mono text-slate-500">
                       Loại câu hỏi
                     </label>
-                    <div className="grid grid-cols-2 gap-2 font-mono">
+                    <div className="grid grid-cols-3 gap-2 font-mono">
                       <button
                         type="button"
                         onClick={() => setQType("multiple_choice")}
-                        className={`py-2 px-3 rounded-lg border text-center font-bold transition ${
+                        className={`py-2 px-2 rounded-lg border text-center font-bold text-xs transition ${
                           qType === "multiple_choice"
-                            ? "bg-indigo-50 border-indigo-500 text-indigo-700"
+                            ? "bg-indigo-50 border-indigo-500 text-indigo-700 shadow-xs"
                             : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100"
                         }`}
                       >
-                        Trắc nghiệm (4 lựa chọn)
+                        Trắc nghiệm
                       </button>
                       <button
                         type="button"
@@ -1144,74 +1266,246 @@ export default function AdminDashboard({
                           setQType("yes_no");
                           setCorrectKey("True");
                         }}
-                        className={`py-2 px-3 rounded-lg border text-center font-bold transition ${
+                        className={`py-2 px-2 rounded-lg border text-center font-bold text-xs transition ${
                           qType === "yes_no"
-                            ? "bg-indigo-50 border-indigo-500 text-indigo-700"
+                            ? "bg-indigo-50 border-indigo-500 text-indigo-700 shadow-xs"
                             : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100"
                         }`}
                       >
-                        Đúng / Sai (True / False)
+                        Đúng / Sai
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setQType("matching")}
+                        className={`py-2 px-2 rounded-lg border text-center font-bold text-xs transition ${
+                          qType === "matching"
+                            ? "bg-indigo-50 border-indigo-500 text-indigo-700 shadow-xs"
+                            : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100"
+                        }`}
+                      >
+                        Ghép nối (Matching)
                       </button>
                     </div>
                   </div>
 
                   {/* Question Content */}
                   <div className="space-y-1">
-                    <label className="block text-[10px] font-extrabold uppercase font-mono text-slate-500">
-                      Nội dung câu hỏi
-                    </label>
+                    <div className="flex items-center justify-between">
+                      <label className="block text-[10px] font-extrabold uppercase font-mono text-slate-500">
+                        Nội dung câu hỏi
+                      </label>
+                    </div>
                     <textarea
                       rows={3}
                       required
                       value={qText}
                       onChange={(e) => setQText(e.target.value)}
-                      placeholder="Nhập nội dung câu hỏi IC3 cần thêm..."
+                      placeholder={
+                        qType === "matching"
+                          ? "VD: Hãy chuyển từng nhu cầu từ danh sách ở bên phải sang thiết bị kỹ thuật số ở bên trái..."
+                          : "Nhập nội dung câu hỏi IC3 cần thêm..."
+                      }
                       className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg font-semibold text-slate-800 placeholder-slate-400 focus:bg-white focus:outline-none focus:border-indigo-500 transition"
                     />
                   </div>
 
-                  {/* Multiple Choice Options */}
-                  {qType === "multiple_choice" && (
-                    <div className="space-y-2 pt-1 border-t border-slate-100">
-                      <div className="text-[10px] font-extrabold uppercase font-mono text-slate-500">
-                        4 Phương án lựa chọn (A, B, C, D) & Chọn đáp án đúng:
+                  {/* Matching Pairs Builder */}
+                  {qType === "matching" && (
+                    <div className="space-y-3 pt-1 border-t border-slate-100">
+                      <div className="flex items-center justify-between">
+                        <div className="text-[10px] font-extrabold uppercase font-mono text-slate-600">
+                          Câu trả lời
+                        </div>
                       </div>
 
-                      <div className="space-y-2">
-                        {[
-                          { key: "A", val: optA, set: setOptA },
-                          { key: "B", val: optB, set: setOptB },
-                          { key: "C", val: optC, set: setOptC },
-                          { key: "D", val: optD, set: setOptD }
-                        ].map((item) => (
-                          <div key={item.key} className="flex items-center gap-2">
-                            <label className="flex items-center gap-1 shrink-0 cursor-pointer">
-                              <input
-                                type="radio"
-                                name="correctKey"
-                                checked={correctKey === item.key}
-                                onChange={() => setCorrectKey(item.key)}
-                                className="text-emerald-600 focus:ring-emerald-500"
-                              />
-                              <span className={`w-5 h-5 rounded flex items-center justify-center font-mono font-bold text-[10px] ${
-                                correctKey === item.key
-                                  ? "bg-emerald-600 text-white"
-                                  : "bg-slate-200 text-slate-700"
-                              }`}>
-                                {item.key}
+                      <div className="space-y-2.5 max-h-[320px] overflow-y-auto pr-1">
+                        {matchingPairs.map((pair, pIdx) => (
+                          <div 
+                            key={pIdx} 
+                            className="p-2.5 bg-slate-50/80 border border-slate-200 rounded-xl space-y-2 hover:border-slate-300 transition"
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-mono font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-150">
+                                Câu #{pIdx + 1}
                               </span>
-                            </label>
-                            <input
-                              type="text"
-                              required
-                              value={item.val}
-                              onChange={(e) => item.set(e.target.value)}
-                              placeholder={`Nội dung lựa chọn ${item.key}...`}
-                              className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 placeholder-slate-400 focus:bg-white focus:outline-none focus:border-indigo-500"
-                            />
+                              {matchingPairs.length > 2 && (
+                                <button
+                                  type="button"
+                                  onClick={() => removeMatchingPair(pIdx)}
+                                  className="text-slate-400 hover:text-rose-600 p-1 rounded transition text-xs flex items-center gap-1"
+                                  title="Xóa cặp này"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                  <span className="text-[10px] font-mono">Xóa</span>
+                                </button>
+                              )}
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              <div>
+                                <label className="block text-[9px] font-mono text-slate-500 uppercase font-bold mb-0.5">
+                                  Thuật ngữ
+                                </label>
+                                <input
+                                  type="text"
+                                  required
+                                  value={pair.left}
+                                  onChange={(e) => updateMatchingPair(pIdx, "left", e.target.value)}
+                                  placeholder="VD: Desktop Computer"
+                                  className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="block text-[9px] font-mono text-slate-500 uppercase font-bold mb-0.5">
+                                  Định nghĩa
+                                </label>
+                                <input
+                                  type="text"
+                                  required
+                                  value={pair.right}
+                                  onChange={(e) => updateMatchingPair(pIdx, "right", e.target.value)}
+                                  placeholder="VD: Có khả năng hợp nhất và chỉnh sửa..."
+                                  className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500"
+                                />
+                              </div>
+                            </div>
                           </div>
                         ))}
                       </div>
+
+                      <button
+                        type="button"
+                        onClick={addMatchingPair}
+                        disabled={matchingPairs.length >= 8}
+                        className="w-full py-2 bg-slate-100 hover:bg-slate-200 disabled:opacity-50 text-slate-700 rounded-lg text-xs font-bold font-mono transition flex items-center justify-center gap-1.5 border border-slate-200 border-dashed cursor-pointer"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Thêm mới (+1)</span>
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Multiple Choice Options */}
+                  {qType === "multiple_choice" && (
+                    <div className="space-y-3 pt-1 border-t border-slate-100">
+                      {/* Sub-type: Single Choice vs Multi Select */}
+                      <div className="space-y-1">
+                        <label className="block text-[10px] font-extrabold uppercase font-mono text-slate-500">
+                          Hình thức trắc nghiệm
+                        </label>
+                        <div className="grid grid-cols-2 gap-2 font-mono">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setMcSubtype("single");
+                              setMcCorrectKeys((prev) => [prev[0] || "A"]);
+                            }}
+                            className={`py-1.5 px-2.5 rounded-lg border text-center font-bold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                              mcSubtype === "single"
+                                ? "bg-indigo-50 border-indigo-500 text-indigo-700 shadow-xs"
+                                : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100"
+                            }`}
+                          >
+                            <span className={`w-2 h-2 rounded-full ${mcSubtype === "single" ? "bg-indigo-600" : "bg-slate-400"}`} />
+                            <span>Chọn 1 đáp án</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setMcSubtype("multiple")}
+                            className={`py-1.5 px-2.5 rounded-lg border text-center font-bold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                              mcSubtype === "multiple"
+                                ? "bg-indigo-50 border-indigo-500 text-indigo-700 shadow-xs"
+                                : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100"
+                            }`}
+                          >
+                            <span className={`w-2 h-2 rounded-xs ${mcSubtype === "multiple" ? "bg-indigo-600" : "bg-slate-400"}`} />
+                            <span>Chọn nhiều đáp án</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between">
+                        <div className="text-[10px] font-extrabold uppercase font-mono text-slate-500">
+                          Các câu trả lời ({mcOptions.length} lựa chọn):
+                        </div>
+                        <span className="text-[10px] text-slate-400 font-mono">
+                          {mcSubtype === "single" ? "Tick chọn 1 đáp án đúng" : "Tick chọn các đáp án đúng"}
+                        </span>
+                      </div>
+
+                      <div className="space-y-2">
+                        {mcOptions.map((optVal, oIdx) => {
+                          const letter = String.fromCharCode(65 + oIdx);
+                          const isCorrect = mcCorrectKeys.includes(letter);
+                          return (
+                            <div key={oIdx} className="flex items-center gap-2">
+                              <label
+                                className="flex items-center gap-1 shrink-0 cursor-pointer"
+                                title={mcSubtype === "single" ? `Đặt ${letter} làm đáp án đúng` : `Bật/tắt ${letter} là đáp án đúng`}
+                              >
+                                {mcSubtype === "single" ? (
+                                  <input
+                                    type="radio"
+                                    name="mcCorrectKeySingle"
+                                    checked={isCorrect}
+                                    onChange={() => setMcCorrectKeys([letter])}
+                                    className="text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                                  />
+                                ) : (
+                                  <input
+                                    type="checkbox"
+                                    checked={isCorrect}
+                                    onChange={() => toggleMcCorrectKey(letter)}
+                                    className="text-emerald-600 rounded focus:ring-emerald-500 cursor-pointer"
+                                  />
+                                )}
+                                <span
+                                  className={`w-5 h-5 rounded flex items-center justify-center font-mono font-bold text-[10px] transition ${
+                                    isCorrect
+                                      ? "bg-emerald-600 text-white shadow-xs"
+                                      : "bg-slate-200 text-slate-700"
+                                  }`}
+                                >
+                                  {letter}
+                                </span>
+                              </label>
+
+                              <input
+                                type="text"
+                                required
+                                value={optVal}
+                                onChange={(e) => updateMcOption(oIdx, e.target.value)}
+                                placeholder={`Nội dung lựa chọn ${letter}...`}
+                                className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 placeholder-slate-400 focus:bg-white focus:outline-none focus:border-indigo-500 transition"
+                              />
+
+                              {mcOptions.length > 2 && (
+                                <button
+                                  type="button"
+                                  onClick={() => removeMcOption(oIdx)}
+                                  className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg transition shrink-0 cursor-pointer"
+                                  title={`Xóa phương án ${letter}`}
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* Add option button */}
+                      <button
+                        type="button"
+                        onClick={addMcOption}
+                        disabled={mcOptions.length >= 10}
+                        className="w-full py-2 bg-slate-100 hover:bg-slate-200 disabled:opacity-50 text-slate-700 rounded-lg text-xs font-bold font-mono transition flex items-center justify-center gap-1.5 border border-slate-200 border-dashed cursor-pointer"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Thêm mới (+1)</span>
+                      </button>
                     </div>
                   )}
 
@@ -1285,7 +1579,20 @@ export default function AdminDashboard({
                     </p>
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+                    <select
+                      value={questionTypeFilter}
+                      onChange={(e) => setQuestionTypeFilter(e.target.value)}
+                      className="py-1.5 px-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 focus:outline-none"
+                    >
+                      <option value="all">Tất cả Loại</option>
+                      <option value="multiple_choice">Trắc nghiệm (Tất cả)</option>
+                      <option value="mc_single">Trắc nghiệm (1 đáp án)</option>
+                      <option value="mc_multi">Trắc nghiệm (Nhiều đáp án)</option>
+                      <option value="yes_no">Đúng / Sai</option>
+                      <option value="matching">Ghép nối (Matching)</option>
+                    </select>
+
                     <select
                       value={questionLevelFilter}
                       onChange={(e) => setQuestionLevelFilter(e.target.value)}
@@ -1350,6 +1657,15 @@ export default function AdminDashboard({
                             <span className="text-[10px] font-mono font-bold uppercase bg-indigo-50 border border-indigo-200 text-indigo-700 px-2 py-0.5 rounded">
                               {q.levelId} • {q.subsetId}
                             </span>
+                            <span className="text-[10px] font-mono font-bold uppercase bg-slate-100 border border-slate-200 text-slate-700 px-2 py-0.5 rounded">
+                              {q.type === "matching"
+                                ? "Ghép nối"
+                                : q.type === "yes_no"
+                                ? "Đúng/Sai"
+                                : q.correctKeys && q.correctKeys.length > 1
+                                ? "Trắc nghiệm (Nhiều đáp án)"
+                                : "Trắc nghiệm (1 đáp án)"}
+                            </span>
                             {q.isCustom && (
                               <span className="text-[10px] font-mono font-bold uppercase bg-emerald-600 text-white px-2 py-0.5 rounded shadow-sm">
                                 Admin tạo mới
@@ -1373,6 +1689,7 @@ export default function AdminDashboard({
                           {q.text}
                         </p>
 
+                        {/* Multiple Choice Options */}
                         {q.options && q.options.length > 0 && (
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 mb-2">
                             {q.options.map((opt: string, optIdx: number) => {
@@ -1393,9 +1710,33 @@ export default function AdminDashboard({
                           </div>
                         )}
 
+                        {/* Matching Question Pairs Display */}
+                        {q.type === "matching" && q.pairs && q.pairs.length > 0 && (
+                          <div className="space-y-1.5 mb-2 bg-white p-2.5 rounded-lg border border-slate-200">
+                            <div className="text-[10px] font-mono font-bold uppercase text-slate-500 mb-1">
+                              Các cặp ghép nối đúng ({q.pairs.length} cặp):
+                            </div>
+                            <div className="grid grid-cols-1 gap-1.5">
+                              {q.pairs.map((pair: any, pIdx: number) => (
+                                <div key={pIdx} className="flex items-center gap-2 text-xs bg-slate-50 p-2 rounded-lg border border-slate-150">
+                                  <span className="font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-150 shrink-0 text-[11px] font-mono">
+                                    {pair.left}
+                                  </span>
+                                  <span className="text-slate-400 font-bold">➔</span>
+                                  <span className="text-slate-700 text-[11px] font-medium leading-relaxed">
+                                    {pair.right}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
                         <div className="text-[11px] font-medium text-slate-500 bg-white p-2 rounded-lg border border-slate-100">
                           <strong className="text-slate-700">Đáp án: </strong>
-                          <span>{q.correctAnswerText || q.correctKeys?.join(", ")}</span>
+                          <span className="whitespace-pre-line">
+                            {q.correctAnswerText || (q.pairs ? q.pairs.map((p: any) => `• ${p.left} ➔ ${p.right}`).join("\n") : q.correctKeys?.join(", "))}
+                          </span>
                         </div>
                       </div>
                     ))

@@ -180,6 +180,12 @@ export default function IC3QuestionBank({
         return false;
       }
     }
+    if (question.type === "multiple_choice" && question.correctKeys && question.correctKeys.length > 1) {
+      const userSelected = ans.split(",").map((s) => s.trim()).filter(Boolean).sort();
+      const targetSelected = [...question.correctKeys].sort();
+      if (userSelected.length !== targetSelected.length) return false;
+      return userSelected.every((k, i) => k === targetSelected[i]);
+    }
     return question.correctKeys?.includes(ans) || false;
   };
 
@@ -1118,14 +1124,26 @@ export default function IC3QuestionBank({
                       {/* Options rendering */}
                       {q.type === "multiple_choice" && q.options && (
                         <div className="space-y-2 pt-1">
-                          <span className="text-[9px] font-black uppercase text-slate-450 flex items-center gap-1 font-mono tracking-wider">
-                            <Compass className="w-3.5 h-3.5 text-slate-400" /> Vui lòng chọn một phương án đáp án:
-                          </span>
+                          {q.correctKeys && q.correctKeys.length > 1 ? (
+                            <span className="text-[9px] font-black uppercase text-indigo-600 flex items-center gap-1 font-mono tracking-wider">
+                              <Compass className="w-3.5 h-3.5 text-indigo-500" /> Vui lòng chọn TẤT CẢ các phương án đúng (chọn nhiều đáp án):
+                            </span>
+                          ) : (
+                            <span className="text-[9px] font-black uppercase text-slate-450 flex items-center gap-1 font-mono tracking-wider">
+                              <Compass className="w-3.5 h-3.5 text-slate-400" /> Vui lòng chọn một phương án đáp án:
+                            </span>
+                          )}
                           
                           <div className="grid grid-cols-1 gap-2.5">
                             {q.options.map((opt, oIdx) => {
                               const letterKey = String.fromCharCode(65 + oIdx);
-                              const isSelected = userAns === letterKey;
+                              const isMulti = !!(q.correctKeys && q.correctKeys.length > 1);
+                              const selectedKeysList = userAns
+                                ? userAns.split(",").map((s) => s.trim()).filter(Boolean)
+                                : [];
+                              const isSelected = isMulti
+                                ? selectedKeysList.includes(letterKey)
+                                : userAns === letterKey;
                               const isCorrectOption = q.correctKeys?.includes(letterKey);
 
                               let btnStyle = "border-slate-200 text-slate-700 bg-white hover:bg-slate-50";
@@ -1158,17 +1176,52 @@ export default function IC3QuestionBank({
                                 }
                               }
 
+                              const handleOptionClick = () => {
+                                if (appMode === "training" && isChecked) return;
+                                if (isMulti) {
+                                  let updated: string[];
+                                  if (selectedKeysList.includes(letterKey)) {
+                                    updated = selectedKeysList.filter((k) => k !== letterKey);
+                                  } else {
+                                    updated = [...selectedKeysList, letterKey].sort();
+                                  }
+                                  const newVal = updated.join(", ");
+                                  setSelectedAnswers((prev) => {
+                                    const next = { ...prev };
+                                    if (newVal) {
+                                      next[q.id] = newVal;
+                                    } else {
+                                      delete next[q.id];
+                                    }
+                                    return next;
+                                  });
+                                } else {
+                                  handleSelectOptionStore(q, letterKey);
+                                }
+                              };
+
                               return (
                                 <button
                                   key={letterKey}
                                   type="button"
-                                  onClick={() => handleSelectOptionStore(q, letterKey)}
-                                  className={`flex items-center gap-3 w-full text-left p-3 rounded-xl border text-xs transition active:scale-[0.99] focus:outline-none ${btnStyle}`}
+                                  onClick={handleOptionClick}
+                                  className={`flex items-center gap-3 w-full text-left p-3 rounded-xl border text-xs transition active:scale-[0.99] focus:outline-none cursor-pointer ${btnStyle}`}
                                 >
                                   <span className={`w-5.5 h-5.5 rounded-lg flex items-center justify-center font-mono font-black text-[10px] border shrink-0 ${circleStyle}`}>
                                     {letterKey}
                                   </span>
                                   <span className="flex-1 font-semibold leading-relaxed">{opt}</span>
+                                  {isMulti && (
+                                    <span
+                                      className={`w-4 h-4 rounded border flex items-center justify-center text-[10px] shrink-0 transition ${
+                                        isSelected
+                                          ? "bg-indigo-600 border-indigo-600 text-white font-bold"
+                                          : "border-slate-300 bg-white text-transparent"
+                                      }`}
+                                    >
+                                      ✓
+                                    </span>
+                                  )}
                                 </button>
                               );
                             })}

@@ -86,6 +86,8 @@ export interface SessionLog {
   name: string;
   className: string;
   school: string;
+  role?: 'admin' | 'student';
+  isOnline?: boolean;
   loginTime: string;
   logoutTime?: string | null;
   durationSeconds?: number | null;

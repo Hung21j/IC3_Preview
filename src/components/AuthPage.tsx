@@ -396,8 +396,9 @@ export default function AuthPage({ onAuthSuccess }: AuthPageProps) {
           </div>
         </motion.div>
 
-        <div className="text-center mt-4 text-[10px] text-slate-400 font-mono">
-          IC3 Digital Literacy Certification Portal • Chuẩn khảo thí Quốc tế
+        <div className="text-center mt-4 space-y-1 text-[10px] text-slate-400 font-mono">
+          <div>IC3 Digital Literacy Certification Portal • Chuẩn khảo thí Quốc tế</div>
+          <div className="text-slate-400/80">Hỗ trợ đầy đủ cả trên Máy chủ và Xuất tĩnh (GitHub Pages)</div>
         </div>
       </div>
     </div>

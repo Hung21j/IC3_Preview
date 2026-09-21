@@ -679,10 +679,8 @@ export const apiService = {
   async getExamHistory(): Promise<ExamHistoryItem[]> {
     try {
       const cloudHistory = await firestoreService.getCloudExamHistory();
-      if (cloudHistory && cloudHistory.length > 0) {
-        saveLocalExamHistory(cloudHistory);
-        return cloudHistory;
-      }
+      saveLocalExamHistory(cloudHistory);
+      return cloudHistory;
     } catch (e) {
       console.warn("Cloud exam history fallback:", e);
     }
@@ -735,10 +733,8 @@ export const apiService = {
   async getCustomQuestions(): Promise<IC3Question[]> {
     try {
       const cloudQuestions = await firestoreService.getCloudQuestions();
-      if (cloudQuestions && cloudQuestions.length > 0) {
-        saveLocalCustomQuestions(cloudQuestions);
-        return cloudQuestions;
-      }
+      saveLocalCustomQuestions(cloudQuestions);
+      return cloudQuestions;
     } catch (e) {
       console.warn("Cloud questions fallback:", e);
     }

@@ -11,7 +11,7 @@ export default function LogoTHDD({ className = "", size = 56 }: LogoTHDDProps) {
   if (!imgError) {
     return (
       <img
-        src="/logo_thdd.jpg"
+        src="/logo_THDD.png"
         alt="Logo Tin Học Đại Dương"
         className={`object-contain rounded-xl ${className}`}
         style={{ width: size, height: size }}

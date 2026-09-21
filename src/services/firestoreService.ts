@@ -2,7 +2,6 @@ import {
   collection,
   doc,
   getDocs,
-  getDoc,
   setDoc,
   updateDoc,
   deleteDoc,
@@ -20,6 +19,32 @@ const USERS_COLLECTION = "users";
 const QUESTIONS_COLLECTION = "questions";
 const EXAM_HISTORY_COLLECTION = "examHistory";
 const SESSIONS_COLLECTION = "sessionLogs";
+
+/**
+ * Recursively cleans and removes all `undefined` values from data objects.
+ * Firestore strictly rejects `undefined` values and throws:
+ * "FirebaseError: Function setDoc() called with invalid data. Unsupported field value: undefined"
+ */
+export function sanitizeForFirestore<T>(data: T): T {
+  if (data === null || data === undefined) {
+    return null as unknown as T;
+  }
+  if (Array.isArray(data)) {
+    return data
+      .filter((item) => item !== undefined)
+      .map((item) => sanitizeForFirestore(item)) as unknown as T;
+  }
+  if (typeof data === "object" && !(data instanceof Date)) {
+    const result: Record<string, any> = {};
+    for (const [key, value] of Object.entries(data)) {
+      if (value !== undefined) {
+        result[key] = sanitizeForFirestore(value);
+      }
+    }
+    return result as T;
+  }
+  return data;
+}
 
 // Default admin and sample users to auto-seed if cloud DB is completely fresh
 const DEFAULT_CLOUD_USERS = [
@@ -119,7 +144,7 @@ export const firestoreService = {
   async seedDefaultUsers(): Promise<void> {
     try {
       for (const u of DEFAULT_CLOUD_USERS) {
-        await setDoc(doc(db, USERS_COLLECTION, u.id), u);
+        await setDoc(doc(db, USERS_COLLECTION, u.id), sanitizeForFirestore(u));
       }
     } catch (e) {
       console.warn("Failed seeding initial cloud users:", e);
@@ -128,15 +153,12 @@ export const firestoreService = {
 
   async saveCloudUser(user: User, password: string): Promise<void> {
     const docRef = doc(db, USERS_COLLECTION, user.id);
-    await setDoc(
-      docRef,
-      {
-        ...user,
-        password,
-        updatedAt: new Date().toISOString()
-      },
-      { merge: true }
-    );
+    const payload = sanitizeForFirestore({
+      ...user,
+      password,
+      updatedAt: new Date().toISOString()
+    });
+    await setDoc(docRef, payload, { merge: true });
   },
 
   async updateCloudUserPassword(userId: string, newPassword: string): Promise<void> {
@@ -184,10 +206,11 @@ export const firestoreService = {
 
   async saveCloudQuestion(question: IC3Question): Promise<void> {
     const docRef = doc(db, QUESTIONS_COLLECTION, question.id);
-    await setDoc(docRef, {
+    const cleanPayload = sanitizeForFirestore({
       ...question,
       updatedAt: new Date().toISOString()
     });
+    await setDoc(docRef, cleanPayload);
   },
 
   async deleteCloudQuestion(questionId: string): Promise<void> {
@@ -199,7 +222,6 @@ export const firestoreService = {
   async getCloudExamHistory(): Promise<ExamHistoryItem[]> {
     try {
       const qRef = collection(db, EXAM_HISTORY_COLLECTION);
-      // Query recent records
       const q = query(qRef, orderBy("timestamp", "desc"), limit(200));
       const snap = await getDocs(q).catch(async () => {
         // Fallback without orderBy in case index is pending
@@ -224,10 +246,11 @@ export const firestoreService = {
   async saveCloudExamRecord(record: ExamHistoryItem): Promise<void> {
     try {
       const docRef = doc(db, EXAM_HISTORY_COLLECTION, record.id);
-      await setDoc(docRef, {
+      const cleanPayload = sanitizeForFirestore({
         ...record,
         createdAtServer: serverTimestamp()
       });
+      await setDoc(docRef, cleanPayload);
     } catch (err) {
       console.warn("Failed to write exam record to Cloud Firestore:", err);
     }
@@ -260,10 +283,11 @@ export const firestoreService = {
   async saveCloudSession(session: SessionLog): Promise<void> {
     try {
       const docRef = doc(db, SESSIONS_COLLECTION, session.id);
-      await setDoc(docRef, {
+      const cleanPayload = sanitizeForFirestore({
         ...session,
         updatedAt: new Date().toISOString()
       });
+      await setDoc(docRef, cleanPayload);
     } catch (err) {
       console.warn("Failed to write session log to Cloud Firestore:", err);
     }

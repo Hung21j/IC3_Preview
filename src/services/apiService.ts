@@ -761,17 +761,18 @@ export const apiService = {
       subsetId: q.subsetId,
       type: q.type,
       text: q.text,
-      options: q.options,
-      correctAnswerText: q.correctAnswerText,
-      correctKeys: q.correctKeys,
-      pairs: q.pairs
+      ...(q.options && q.options.length > 0 ? { options: q.options } : {}),
+      ...(q.correctAnswerText ? { correctAnswerText: q.correctAnswerText } : {}),
+      ...(q.correctKeys && q.correctKeys.length > 0 ? { correctKeys: q.correctKeys } : {}),
+      ...(q.pairs && q.pairs.length > 0 ? { pairs: q.pairs } : {})
     };
 
     // 1. Save directly to Cloud Firestore so all computers see it immediately
     try {
       await firestoreService.saveCloudQuestion(newQ);
-    } catch (err) {
-      console.warn("Failed saving question to Cloud Firestore:", err);
+    } catch (err: any) {
+      console.error("Failed saving question to Cloud Firestore:", err);
+      throw new Error(`Lỗi lưu câu hỏi lên Cloud Firestore: ${err?.message || err}`);
     }
 
     // 2. Cache locally

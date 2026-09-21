@@ -335,6 +335,18 @@ app.post("/api/auth/logout", (req, res) => {
   }
 });
 
+// Public student directory for dropdown login (no passwords)
+app.get("/api/auth/directory", (req, res) => {
+  try {
+    const students = db.getUsers()
+      .filter(u => u.role === "student" || (u.school && u.className))
+      .map(({ password, ...u }) => u);
+    return res.json({ success: true, students });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: "Lỗi tải danh mục học sinh." });
+  }
+});
+
 // ==========================================
 // ADMIN USER MANAGEMENT ENDPOINTS
 // ==========================================

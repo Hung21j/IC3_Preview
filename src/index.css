@@ -2,32 +2,44 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "Inter", "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Plus Jakarta Sans", "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 }
 
-/* Custom styles for professional academic aesthetics */
-body {
-  font-family: var(--font-sans);
-  background-color: #f8fafc;
-  color: #0f172a;
+/* Custom styles for eye-friendly, anti-glare academic ergonomics */
+:root {
+  color-scheme: light !important;
 }
 
-/* Scrollbar styling */
+html {
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: #f0f3f8; /* Soft light gray canvas: gentle on the eyes, anti-glare, pristine clarity */
+  color: #0f172a; /* Deep, sharp high-contrast text for effortless readability */
+  font-size: 0.95rem;
+  line-height: 1.6;
+}
+
+/* Eye-friendly scrollbar */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #f1f5f9;
+  background: #e2e8f0;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: #94a3b8;
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: #64748b;
 }

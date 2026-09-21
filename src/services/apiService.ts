@@ -572,6 +572,34 @@ export const apiService = {
     return fallbackUser;
   },
 
+  // Student Directory for Dropdown Login (School -> Class -> Student Name)
+  async getStudentsForLogin(): Promise<User[]> {
+    // 1. Try Cloud Firestore first
+    try {
+      const cloudData = await firestoreService.getCloudUsers();
+      if (cloudData && cloudData.length > 0) {
+        const students = cloudData
+          .map((d) => d.user)
+          .filter((u) => u.role === "student" || (u.school && u.className));
+        if (students.length > 0) {
+          return students;
+        }
+      }
+    } catch (e) {
+      console.warn("Could not load cloud student directory:", e);
+    }
+
+    // 2. Try backend endpoint
+    const res = await safeFetchJson<{ success: boolean; students: User[] }>("/api/auth/directory");
+    if (res.ok && res.data?.success && Array.isArray(res.data.students)) {
+      return res.data.students;
+    }
+
+    // 3. Local fallback
+    const local = getLocalUsers().map((e) => e.user);
+    return local.filter((u) => u.role === "student" || (u.school && u.className));
+  },
+
   // Admin: Update User Password (Cloud & Local)
   async updateUserPassword(userId: string, newPassword: string): Promise<void> {
     if (!newPassword || newPassword.trim().length === 0) {
@@ -788,6 +816,51 @@ export const apiService = {
     }).catch(() => {});
 
     return newQ;
+  },
+
+  // Admin: Update / Edit existing question (Saved to Cloud Firestore & Local)
+  async updateCustomQuestion(questionId: string, q: Partial<IC3Question>): Promise<IC3Question> {
+    const questions = getLocalCustomQuestions();
+    const existingIndex = questions.findIndex((item) => item.id === questionId);
+    const existing = existingIndex >= 0 ? questions[existingIndex] : null;
+
+    const updatedQ: IC3Question = {
+      id: questionId,
+      levelId: q.levelId || existing?.levelId || "level-1",
+      subsetId: q.subsetId || existing?.subsetId || "GM1",
+      type: q.type || existing?.type || "multiple_choice",
+      text: (q.text !== undefined ? q.text : existing?.text || "").trim(),
+      ...(q.options && q.options.length > 0 ? { options: q.options } : {}),
+      ...(q.correctAnswerText !== undefined ? { correctAnswerText: q.correctAnswerText } : existing?.correctAnswerText ? { correctAnswerText: existing.correctAnswerText } : {}),
+      ...(q.correctKeys && q.correctKeys.length > 0 ? { correctKeys: q.correctKeys } : {}),
+      ...(q.pairs && q.pairs.length > 0 ? { pairs: q.pairs } : {}),
+      ...(q.explanation !== undefined ? { explanation: q.explanation } : existing?.explanation ? { explanation: existing.explanation } : {})
+    };
+
+    // 1. Update in Cloud Firestore
+    try {
+      await firestoreService.saveCloudQuestion(updatedQ);
+    } catch (err: any) {
+      console.error("Failed updating question on Cloud Firestore:", err);
+      throw new Error(`Lỗi cập nhật câu hỏi lên Cloud Firestore: ${err?.message || err}`);
+    }
+
+    // 2. Update local storage cache
+    if (existingIndex >= 0) {
+      questions[existingIndex] = updatedQ;
+    } else {
+      questions.unshift(updatedQ);
+    }
+    saveLocalCustomQuestions(questions);
+
+    // 3. Sync to backend if running
+    safeFetchJson(`/api/admin/questions/${questionId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(updatedQ)
+    }).catch(() => {});
+
+    return updatedQ;
   },
 
   // Admin: Delete Question (Removed from Cloud Firestore)

@@ -27,7 +27,8 @@ import { SolvedResponse, SavedQuestion, QuestionType, User } from "./types";
 import { IC3Question } from "./data/ic3Questions";
 import { apiService } from "./services/apiService";
 import { motion, AnimatePresence } from "motion/react";
-import { ShieldCheck, LogOut } from "lucide-react";
+import { ShieldCheck, LogOut, KeyRound } from "lucide-react";
+import { ChangePasswordModal } from "./components/ChangePasswordModal";
 
 // Academic/solving status indicators during analysis
 const STATUS_INDICATORS = [
@@ -122,6 +123,8 @@ export default function App() {
   const [currentView, setCurrentView] = useState<"student" | "admin">("student");
   const [customQuestions, setCustomQuestions] = useState<IC3Question[]>([]);
   const [selectedLevel, setSelectedLevel] = useState<string | null>(null);
+  const [showUserChangePassword, setShowUserChangePassword] = useState(false);
+  const [userToast, setUserToast] = useState<string | null>(null);
 
   // Level-specific accent configurations to tie the theme color all the way from Level Selection
   const isL1 = selectedLevel?.includes("Level 1");
@@ -328,38 +331,48 @@ export default function App() {
 
   if (!selectedLevel) {
     return (
-      <div className="min-h-screen bg-[#f8fafc] text-slate-850 flex items-center justify-center p-4 md:p-8 font-sans select-none border-4 md:border-8 border-slate-200">
+      <div className="min-h-screen bg-[#f0f3f8] text-slate-900 flex items-center justify-center p-4 md:p-8 font-sans select-none border-4 md:border-8 border-slate-300">
         <motion.div 
           initial={{ opacity: 0, scale: 0.98 }}
           animate={{ opacity: 1, scale: 1 }}
-          className="max-w-4xl w-full bg-white border border-slate-200 rounded-2xl p-6 md:p-8 space-y-6 md:space-y-8 shadow-xl relative overflow-hidden"
+          className="max-w-4xl w-full bg-white border-2 border-slate-300 rounded-2xl p-6 md:p-8 space-y-6 md:space-y-8 shadow-sm relative overflow-hidden"
         >
           {/* Subtle decoration lines */}
-          <div className="absolute top-0 left-0 right-0 h-1.5 bg-indigo-600" />
+          <div className="absolute top-0 left-0 right-0 h-1.5 bg-indigo-700" />
           
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 pb-5">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b-2 border-slate-200 pb-5">
             <div className="space-y-1">
-              <span className="text-[10px] font-extrabold uppercase tracking-widest text-indigo-650 font-mono">
+              <span className="text-xs font-black uppercase tracking-widest text-indigo-700 font-mono">
                 BƯỚC 2:
               </span>
-              <h2 className="text-sm md:text-base font-bold tracking-tight text-slate-800 uppercase font-mono">
+              <h2 className="text-base md:text-lg font-black tracking-tight text-slate-900 uppercase font-mono">
                 CHỌN CẤP ĐỘ ÔN TẬP IC3
               </h2>
-              <p className="text-xs text-slate-500 font-medium leading-relaxed">
-                Xin chào <strong className="text-slate-800">{currentUser.name}</strong>
-                {currentUser.className && <> (Lớp <strong className="text-slate-800">{currentUser.className}</strong>)</>}
-                {currentUser.school && <> • <span className="text-slate-600">{currentUser.school}</span></>}
+              <p className="text-xs md:text-sm text-slate-700 font-semibold leading-relaxed">
+                Xin chào <strong className="text-slate-950 font-black">{currentUser.name}</strong>
+                {currentUser.className && <> (Lớp <strong className="text-slate-950 font-black">{currentUser.className}</strong>)</>}
+                {currentUser.school && <> • <span className="text-slate-800 font-bold">{currentUser.school}</span></>}
               </p>
             </div>
             
-            <div className="flex items-center gap-2 self-start md:self-center">
+            <div className="flex items-center gap-2.5 self-start md:self-center flex-wrap">
+              <button
+                type="button"
+                onClick={() => setShowUserChangePassword(true)}
+                className="px-3.5 py-2 rounded-xl text-xs md:text-sm font-bold font-mono bg-[#f1f5f9] hover:bg-[#e2e8f0] border border-slate-300 text-slate-900 transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+                title="Đổi mật khẩu tài khoản của bạn"
+              >
+                <KeyRound className="w-4 h-4 text-indigo-600" />
+                <span>Đổi mật khẩu</span>
+              </button>
+
               {currentUser.role === "admin" && (
                 <button
                   type="button"
                   onClick={() => setCurrentView("admin")}
-                  className="px-3 py-1.5 rounded-lg text-xs font-bold font-mono bg-amber-500 hover:bg-amber-600 text-white shadow-sm transition active:scale-95 flex items-center gap-1.5 cursor-pointer"
+                  className="px-3.5 py-2 rounded-xl text-xs md:text-sm font-bold font-mono bg-amber-600 hover:bg-amber-700 text-white shadow-sm transition active:scale-95 flex items-center gap-1.5 cursor-pointer"
                 >
-                  <ShieldCheck className="w-3.5 h-3.5" />
+                  <ShieldCheck className="w-4 h-4" />
                   <span>Trang Quản Trị</span>
                 </button>
               )}
@@ -367,9 +380,9 @@ export default function App() {
               <button
                 type="button"
                 onClick={handleLogout}
-                className="px-3 py-1.5 rounded-lg text-xs font-bold font-mono bg-slate-100 hover:bg-rose-50 hover:text-rose-600 border border-slate-200 text-slate-600 transition flex items-center gap-1.5 cursor-pointer"
+                className="px-3.5 py-2 rounded-xl text-xs md:text-sm font-bold font-mono bg-[#f1f5f9] hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300 border border-slate-300 text-slate-800 transition flex items-center gap-1.5 cursor-pointer shadow-xs"
               >
-                <LogOut className="w-3.5 h-3.5" />
+                <LogOut className="w-4 h-4" />
                 <span>Đăng xuất</span>
               </button>
             </div>
@@ -384,37 +397,37 @@ export default function App() {
                   localStorage.setItem("student_level_ic3", level.name);
                   setSelectedLevel(level.name);
                 }}
-                className={`bg-slate-50/50 border border-slate-200 rounded-xl p-5 flex flex-col justify-between transition-all cursor-pointer relative overflow-hidden group select-none ${level.hoverBorder}`}
+                className={`bg-white hover:bg-[#f8fafc] border-2 border-slate-300 hover:border-indigo-600 rounded-2xl p-5 flex flex-col justify-between transition-all cursor-pointer relative overflow-hidden group select-none shadow-xs hover:shadow-md ${level.hoverBorder}`}
               >
                 <div className="space-y-4">
                   <div className="flex justify-between items-start">
-                    <span className={`px-2 py-0.5 text-[9px] font-extrabold border rounded uppercase font-mono ${level.badgeColor}`}>
+                    <span className={`px-2.5 py-1 text-[11px] font-black border rounded-md uppercase font-mono ${level.badgeColor}`}>
                       {level.id.replace("-", " ")}
                     </span>
-                    <div className="w-2 h-2 rounded-full bg-slate-300 group-hover:bg-indigo-600 transition-colors" />
+                    <div className="w-2.5 h-2.5 rounded-full bg-slate-400 group-hover:bg-indigo-600 transition-colors" />
                   </div>
 
                   <div className="space-y-1">
-                    <h3 className="text-sm font-extrabold text-slate-800 leading-snug group-hover:text-indigo-600 transition-colors">
+                    <h3 className="text-base font-extrabold text-slate-900 leading-snug group-hover:text-indigo-700 transition-colors">
                       {level.name}
                     </h3>
-                    <p className="text-[10px] font-bold text-slate-450 font-mono italic">
+                    <p className="text-xs font-bold text-slate-500 font-mono italic">
                       {level.englishName}
                     </p>
                   </div>
 
-                  <p className="text-[11px] text-slate-550 leading-relaxed font-semibold">
+                  <p className="text-xs md:text-sm text-slate-700 leading-relaxed font-semibold">
                     {level.description}
                   </p>
 
                   <div className="space-y-1.5 pt-2">
-                    <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block font-mono">
+                    <span className="text-xs font-extrabold uppercase tracking-wider text-slate-500 block font-mono">
                       Chủ đề trọng tâm:
                     </span>
-                    <ul className="space-y-1">
+                    <ul className="space-y-1.5">
                       {level.skills.map((skill, sIdx) => (
-                        <li key={sIdx} className="text-[10px] text-slate-600 flex items-center gap-1.5 font-semibold">
-                          <span className="w-1 h-1 rounded-full bg-indigo-500 shrink-0" />
+                        <li key={sIdx} className="text-xs md:text-sm text-slate-800 flex items-center gap-2 font-semibold">
+                          <span className="w-1.5 h-1.5 rounded-full bg-indigo-600 shrink-0" />
                           <span className="truncate">{skill}</span>
                         </li>
                       ))}
@@ -424,7 +437,7 @@ export default function App() {
 
                 <div className="pt-5 mt-auto">
                   <button
-                    className={`w-full py-2 rounded-lg text-[10px] font-black uppercase tracking-wider text-white transition duration-200 ${level.buttonColor}`}
+                    className={`w-full py-2.5 rounded-xl text-xs md:text-sm font-black uppercase tracking-wider text-white transition duration-200 ${level.buttonColor}`}
                   >
                     Bắt đầu luyện
                   </button>
@@ -433,47 +446,72 @@ export default function App() {
             ))}
           </div>
 
-          <div className="text-center text-[10px] text-slate-400 font-mono border-t border-slate-200 pt-4">
+          <div className="text-center text-xs text-slate-500 font-mono border-t border-slate-300 pt-4">
             Giáo trình bám sát khung năng lực IC3 quốc tế thế hệ mới.
           </div>
         </motion.div>
+
+        {/* Change password modal for student in Level Selection */}
+        <ChangePasswordModal
+          isOpen={showUserChangePassword}
+          onClose={() => setShowUserChangePassword(false)}
+          userId={currentUser.id}
+          username={currentUser.username}
+          userName={currentUser.name}
+          className={currentUser.className}
+          school={currentUser.school}
+          onSuccess={(msg) => {
+            setUserToast(msg);
+            setTimeout(() => setUserToast(null), 4000);
+          }}
+        />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#f8fafc] flex flex-col font-sans text-slate-950 border-4 md:border-8 border-slate-200">
+    <div className="min-h-screen bg-[#f0f3f8] flex flex-col font-sans text-slate-900 border-4 md:border-8 border-slate-300">
       
-      {/* 🚀 Visual Header Bar - Ultra Focused, No Slop */}
-      <header className="h-16 bg-white border-b border-slate-200 px-4 md:px-8 flex items-center justify-between shadow-sm z-10 shrink-0 select-none">
+      {/* 🚀 Visual Header Bar - Soft Surface, High Contrast */}
+      <header className="h-16 bg-white border-b-2 border-slate-300 px-4 md:px-8 flex items-center justify-between shadow-xs z-10 shrink-0 select-none">
         <div className="flex items-center gap-2">
           <div className="flex flex-col">
-            <h1 className="text-sm md:text-base font-extrabold tracking-tight text-slate-800 leading-none">
+            <h1 className="text-base md:text-lg font-black tracking-tight text-slate-900 leading-none">
               ÔN TẬP IC3
             </h1>
           </div>
         </div>
 
         {/* Header Profile Dashboard Integration */}
-        <div className="flex items-center gap-2 md:gap-3">
+        <div className="flex items-center gap-2.5 md:gap-3.5 flex-wrap">
+          <button
+            type="button"
+            onClick={() => setShowUserChangePassword(true)}
+            className="p-2 px-3 rounded-xl text-xs md:text-sm bg-[#f1f5f9] hover:bg-[#e2e8f0] border border-slate-300 text-slate-900 font-bold font-mono transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+            title="Đổi mật khẩu tài khoản"
+          >
+            <KeyRound className="w-4 h-4 text-indigo-600" />
+            <span className="hidden sm:inline">Đổi mật khẩu</span>
+          </button>
+
           {currentUser.role === "admin" && (
             <button
               type="button"
               onClick={() => setCurrentView("admin")}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold font-mono bg-amber-500 hover:bg-amber-600 text-white shadow-sm transition active:scale-95 cursor-pointer"
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs md:text-sm font-bold font-mono bg-amber-600 hover:bg-amber-700 text-white shadow-sm transition active:scale-95 cursor-pointer"
             >
-              <ShieldCheck className="w-3.5 h-3.5" />
+              <ShieldCheck className="w-4 h-4" />
               <span>Trang Quản Trị</span>
             </button>
           )}
 
-          <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0 animate-pulse" />
+          <div className="bg-[#f1f5f9] border border-slate-300 rounded-xl px-3.5 py-2 flex items-center gap-2.5 shadow-xs">
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-600 shrink-0 animate-pulse" />
             <div className="text-left leading-none">
-              <p className="text-xs font-black text-slate-800">
+              <p className="text-xs md:text-sm font-black text-slate-950">
                 {currentUser.name}
               </p>
-              <p className="text-[9px] font-bold text-slate-500 mt-1 font-mono">
+              <p className="text-[11px] font-bold text-slate-700 mt-1 font-mono">
                 {currentUser.className ? `Lớp ${currentUser.className}` : "Tài khoản"} {currentUser.school ? `• ${currentUser.school}` : ""}
               </p>
             </div>
@@ -485,7 +523,7 @@ export default function App() {
               setSelectedLevel(null);
               localStorage.removeItem("student_level_ic3");
             }}
-            className={`p-1.5 px-2.5 rounded-lg text-xs ${accentChangeLvlBtn} font-bold font-mono transition cursor-pointer`}
+            className={`p-2 px-3 rounded-xl text-xs md:text-sm ${accentChangeLvlBtn} font-black font-mono transition cursor-pointer shadow-xs`}
           >
             Đổi Level
           </button>
@@ -493,21 +531,21 @@ export default function App() {
           <button
             type="button"
             onClick={handleLogout}
-            className="p-1.5 px-2.5 rounded-lg text-xs bg-slate-50 border border-slate-200 text-rose-600 hover:bg-rose-50 hover:border-rose-200 font-bold font-mono transition flex items-center gap-1 cursor-pointer"
+            className="p-2 px-3 rounded-xl text-xs md:text-sm bg-[#f1f5f9] hover:bg-rose-50 hover:border-rose-300 border border-slate-300 text-rose-700 font-bold font-mono transition flex items-center gap-1.5 cursor-pointer shadow-xs"
           >
-            <LogOut className="w-3.5 h-3.5" />
+            <LogOut className="w-4 h-4" />
             <span className="hidden sm:inline">Đăng xuất</span>
           </button>
         </div>
       </header>
 
       {/* 🔮 Center Focused Layout Main Workspace - Single Column */}
-      <main className="flex-1 overflow-y-auto bg-slate-50/70 py-6 px-4 md:px-8">
+      <main className="flex-1 overflow-y-auto bg-[#f0f3f8] py-6 px-4 md:px-8">
         <div className="max-w-4xl mx-auto w-full space-y-6">
           
           {/* 1. Main Focused Question Bank Display - Expanded */}
           {selectedLevel && (
-            <div className="shadow-lg rounded-xl overflow-hidden bg-white border border-slate-200">
+            <div className="shadow-sm rounded-2xl overflow-hidden bg-white border-2 border-slate-300">
               <IC3QuestionBank 
                 selectedLevel={selectedLevel}
                 currentUser={currentUser}
@@ -619,10 +657,40 @@ export default function App() {
       </main>
 
       {/* 🚀 Distraction-Free Simple Footer */}
-      <footer className="h-10 bg-slate-900 text-white flex items-center justify-between px-6 text-[9px] uppercase tracking-wider font-semibold font-mono shrink-0 select-none">
+      <footer className="h-10 bg-slate-800 text-slate-200 flex items-center justify-between px-6 text-xs uppercase tracking-wider font-semibold font-mono shrink-0 select-none">
         <span>{currentUser.className ? `Lớp ${currentUser.className} // ` : ""}{currentUser.name} {currentUser.school ? `(${currentUser.school})` : ""}</span>        
-        <span className="text-slate-400">IC3 GS6 Examination Platform</span>
+        <span className="text-slate-300">IC3 GS6 Examination Platform</span>
       </footer>
+
+      {/* Change Password Modal for logged-in user */}
+      <ChangePasswordModal
+        isOpen={showUserChangePassword}
+        onClose={() => setShowUserChangePassword(false)}
+        userId={currentUser.id}
+        username={currentUser.username}
+        userName={currentUser.name}
+        className={currentUser.className}
+        school={currentUser.school}
+        onSuccess={(msg) => {
+          setUserToast(msg);
+          setTimeout(() => setUserToast(null), 4000);
+        }}
+      />
+
+      {/* Toast Notification */}
+      <AnimatePresence>
+        {userToast && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            className="fixed bottom-12 right-6 z-50 bg-emerald-600 text-white py-2.5 px-4 rounded-xl shadow-lg text-xs font-bold font-mono flex items-center gap-2"
+          >
+            <CheckCircle className="w-4 h-4" />
+            <span>{userToast}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
     </div>
   );

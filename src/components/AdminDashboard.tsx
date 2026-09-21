@@ -28,7 +28,10 @@ import {
   Download,
   Upload,
   Copy,
-  CheckCheck
+  CheckCheck,
+  Edit3,
+  Calendar,
+  RotateCcw
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { User, SessionLog, ExamHistoryItem } from "../types";
@@ -39,6 +42,8 @@ import {
   exportToCsvSheet, 
   ParsedStudentRow 
 } from "../utils/sheetExportUtils";
+import { ChangePasswordModal } from "./ChangePasswordModal";
+import { EditQuestionModal } from "./EditQuestionModal";
 
 interface AdminDashboardProps {
   currentUser: User;
@@ -91,11 +96,19 @@ export default function AdminDashboard({
   const [historySearch, setHistorySearch] = useState("");
   const [historyLevelFilter, setHistoryLevelFilter] = useState<string>("all");
   const [historyModeFilter, setHistoryModeFilter] = useState<string>("all");
+  const [historyClassFilter, setHistoryClassFilter] = useState<string>("all");
+  const [historyDateFilter, setHistoryDateFilter] = useState<string>("");
 
   const [questionSearch, setQuestionSearch] = useState("");
   const [questionLevelFilter, setQuestionLevelFilter] = useState<string>("all");
   const [questionSubsetFilter, setQuestionSubsetFilter] = useState<string>("all");
   const [questionTypeFilter, setQuestionTypeFilter] = useState<string>("all");
+
+  // Question editing modal state
+  const [editingQuestion, setEditingQuestion] = useState<IC3Question | null>(null);
+
+  // Admin personal change password modal state
+  const [showAdminChangePassword, setShowAdminChangePassword] = useState(false);
 
   // Modal: Add User
   const [showAddUserModal, setShowAddUserModal] = useState(false);
@@ -551,13 +564,38 @@ export default function AdminDashboard({
       .includes(sessionSearch.toLowerCase());
   });
 
+  // Dynamic list of unique classes for filtering
+  const availableClasses = React.useMemo(() => {
+    const set = new Set<string>();
+    examHistory.forEach((h) => {
+      if (h.className && h.className.trim()) set.add(h.className.trim());
+    });
+    users.forEach((u) => {
+      if (u.className && u.className.trim()) set.add(u.className.trim());
+    });
+    return Array.from(set).sort();
+  }, [examHistory, users]);
+
   const filteredHistory = examHistory.filter(h => {
-    const matchSearch = (h.studentName + h.username + h.className + h.school + h.subset)
-      .toLowerCase()
-      .includes(historySearch.toLowerCase());
+    const matchSearch = (
+      (h.studentName || "") + 
+      (h.username || "") + 
+      (h.className || "") + 
+      (h.school || "") + 
+      (h.subset || "")
+    ).toLowerCase().includes(historySearch.toLowerCase());
+    
     const matchLevel = historyLevelFilter === "all" || h.level.includes(historyLevelFilter);
     const matchMode = historyModeFilter === "all" || h.mode === historyModeFilter;
-    return matchSearch && matchLevel && matchMode;
+    
+    // Class filter (check exact class match, case-insensitive)
+    const matchClass = historyClassFilter === "all" || 
+      (h.className && h.className.trim().toLowerCase() === historyClassFilter.toLowerCase());
+    
+    // Date filter (ISO string starts with YYYY-MM-DD)
+    const matchDate = !historyDateFilter || (h.timestamp && h.timestamp.startsWith(historyDateFilter));
+
+    return matchSearch && matchLevel && matchMode && matchClass && matchDate;
   });
 
   // Combined questions list (Base + Custom)
@@ -611,34 +649,44 @@ export default function AdminDashboard({
   };
 
   return (
-    <div className="min-h-screen bg-slate-100 flex flex-col font-sans text-slate-900 select-none border-4 md:border-8 border-slate-200">
+    <div className="min-h-screen bg-[#eaedf2] flex flex-col font-sans text-slate-900 select-none border-4 md:border-8 border-slate-300">
       
       {/* 🚀 Admin Header Bar */}
-      <header className="h-16 bg-white border-b border-slate-200 px-4 md:px-8 flex items-center justify-between shadow-sm z-10 shrink-0">
+      <header className="h-16 bg-[#f7f9fc] border-b border-slate-300 px-4 md:px-8 flex items-center justify-between shadow-xs z-10 shrink-0">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-amber-600 text-white flex items-center justify-center shadow-md shadow-amber-600/20">
             <ShieldCheck className="w-6 h-6" />
           </div>
           <div>
-            <h1 className="text-sm md:text-base font-extrabold tracking-tight text-slate-800 uppercase font-mono leading-none">
+            <h1 className="text-sm md:text-base font-extrabold tracking-tight text-slate-900 uppercase font-mono leading-none">
               TRUNG TÂM QUẢN TRỊ IC3
             </h1>
-            <p className="text-[10px] text-slate-500 font-mono mt-1 font-medium">
+            <p className="text-xs text-slate-600 font-mono mt-1 font-medium">
               Quyền hạn Quản trị viên: <span className="font-bold text-amber-700">{currentUser.name}</span> (@{currentUser.username})
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-2 md:gap-3">
-          <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-lg text-[11px] font-mono font-bold shadow-xs">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+          <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-emerald-100/80 border border-emerald-300 text-emerald-900 rounded-xl text-xs font-mono font-bold shadow-xs">
+            <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse"></span>
             <span>Cloud Firestore: Đã đồng bộ</span>
           </div>
 
           <button
             type="button"
+            onClick={() => setShowAdminChangePassword(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-[#edf2f7] border border-slate-300 text-slate-800 hover:bg-[#e2e8f0] rounded-xl text-xs md:text-sm font-bold font-mono transition active:scale-95 cursor-pointer shadow-xs"
+            title="Đổi mật khẩu tài khoản quản trị viên của bạn"
+          >
+            <KeyRound className="w-4 h-4 text-amber-600" />
+            <span className="hidden sm:inline">Đổi mật khẩu</span>
+          </button>
+
+          <button
+            type="button"
             onClick={onSwitchToStudentView}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 border border-indigo-200 text-indigo-700 hover:bg-indigo-100 rounded-lg text-xs font-bold font-mono transition active:scale-95 shadow-sm"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 rounded-lg text-xs font-bold font-mono transition active:scale-95 shadow-sm cursor-pointer"
           >
             <BookOpen className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Vào giao diện</span> Làm bài thi
@@ -647,7 +695,7 @@ export default function AdminDashboard({
           <button
             type="button"
             onClick={onLogout}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 border border-slate-200 text-rose-600 hover:bg-rose-50 hover:border-rose-200 rounded-lg text-xs font-bold font-mono transition active:scale-95"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 hover:border-rose-200 dark:hover:border-rose-800 rounded-lg text-xs font-bold font-mono transition active:scale-95 cursor-pointer"
           >
             <LogOut className="w-3.5 h-3.5" />
             <span>Đăng xuất</span>
@@ -1070,49 +1118,124 @@ export default function AdminDashboard({
           {activeTab === "history" && (
             <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-4 md:p-6 space-y-4">
               
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-slate-100">
-                <div className="relative flex-1 max-w-sm">
-                  <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
-                  <input
-                    type="text"
-                    value={historySearch}
-                    onChange={(e) => setHistorySearch(e.target.value)}
-                    placeholder="Tìm theo tên học sinh, lớp, đề..."
-                    className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 placeholder-slate-400 focus:bg-white focus:outline-none focus:border-indigo-500"
-                  />
+              <div className="flex flex-col gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+                  <div className="relative flex-1 max-w-sm">
+                    <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
+                    <input
+                      type="text"
+                      value={historySearch}
+                      onChange={(e) => setHistorySearch(e.target.value)}
+                      placeholder="Tìm theo tên học sinh, username, lớp, đề..."
+                      className="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-semibold text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:bg-white dark:focus:bg-slate-800 focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {/* 1. Filter by Class */}
+                    <div className="flex items-center gap-1.5">
+                      <select
+                        value={historyClassFilter}
+                        onChange={(e) => setHistoryClassFilter(e.target.value)}
+                        className="py-2 px-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-200 focus:outline-none cursor-pointer"
+                        title="Lọc theo Lớp học"
+                      >
+                        <option value="all">Tất cả Lớp ({availableClasses.length})</option>
+                        {availableClasses.map((cls) => (
+                          <option key={cls} value={cls}>
+                            Lớp {cls}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* 2. Filter by Date */}
+                    <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5">
+                      <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      <input
+                        type="date"
+                        value={historyDateFilter}
+                        onChange={(e) => setHistoryDateFilter(e.target.value)}
+                        className="bg-transparent text-xs font-mono font-medium text-slate-700 dark:text-slate-200 focus:outline-none cursor-pointer"
+                        title="Lọc kết quả theo ngày nộp bài"
+                      />
+                      {historyDateFilter && (
+                        <button
+                          type="button"
+                          onClick={() => setHistoryDateFilter("")}
+                          className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5 rounded cursor-pointer"
+                          title="Bỏ lọc theo ngày"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
+
+                    {/* 3. Filter by Level */}
+                    <select
+                      value={historyLevelFilter}
+                      onChange={(e) => setHistoryLevelFilter(e.target.value)}
+                      className="py-2 px-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-200 focus:outline-none cursor-pointer"
+                    >
+                      <option value="all">Tất cả cấp độ</option>
+                      <option value="Level 1">Level 1</option>
+                      <option value="Level 2">Level 2</option>
+                      <option value="Level 3">Level 3</option>
+                    </select>
+
+                    {/* 4. Filter by Mode */}
+                    <select
+                      value={historyModeFilter}
+                      onChange={(e) => setHistoryModeFilter(e.target.value)}
+                      className="py-2 px-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-200 focus:outline-none cursor-pointer"
+                    >
+                      <option value="all">Tất cả chế độ</option>
+                      <option value="testing">Thi thử (Testing)</option>
+                      <option value="training">Luyện tập (Training)</option>
+                    </select>
+
+                    {/* Export Button */}
+                    <button
+                      type="button"
+                      onClick={handleExportScoresToSheet}
+                      className="py-2 px-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold font-mono transition flex items-center gap-1.5 shadow-sm active:scale-95 shrink-0 cursor-pointer"
+                      title="Xuất bảng điểm ra file Google Sheets / Excel CSV (1 câu đúng = 1 điểm)"
+                    >
+                      <FileSpreadsheet className="w-3.5 h-3.5" />
+                      <span>Xuất điểm Sheet</span>
+                    </button>
+                  </div>
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <select
-                    value={historyLevelFilter}
-                    onChange={(e) => setHistoryLevelFilter(e.target.value)}
-                    className="py-2 px-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 focus:outline-none"
-                  >
-                    <option value="all">Tất cả cấp độ</option>
-                    <option value="Level 1">Level 1</option>
-                    <option value="Level 2">Level 2</option>
-                    <option value="Level 3">Level 3</option>
-                  </select>
+                {/* Filter Status Summary & Reset */}
+                <div className="flex items-center justify-between text-[11px] font-mono text-slate-500 dark:text-slate-400 pt-1">
+                  <div className="flex items-center gap-2">
+                    <span>
+                      Hiển thị <strong className="text-slate-800 dark:text-slate-100 font-bold">{filteredHistory.length}</strong> / {examHistory.length} kết quả
+                    </span>
+                    {(historyClassFilter !== "all" || historyDateFilter || historyLevelFilter !== "all" || historyModeFilter !== "all" || historySearch) && (
+                      <span className="px-2 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 font-semibold border border-indigo-200 dark:border-indigo-800">
+                        Đang lọc
+                      </span>
+                    )}
+                  </div>
 
-                  <select
-                    value={historyModeFilter}
-                    onChange={(e) => setHistoryModeFilter(e.target.value)}
-                    className="py-2 px-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 focus:outline-none"
-                  >
-                    <option value="all">Tất cả chế độ</option>
-                    <option value="testing">Thi thử (Testing)</option>
-                    <option value="training">Luyện tập (Training)</option>
-                  </select>
-
-                  <button
-                    type="button"
-                    onClick={handleExportScoresToSheet}
-                    className="py-2 px-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold font-mono transition flex items-center gap-1.5 shadow-sm active:scale-95 shrink-0"
-                    title="Xuất bảng điểm ra file Google Sheets / Excel CSV (1 câu đúng = 1 điểm)"
-                  >
-                    <FileSpreadsheet className="w-3.5 h-3.5" />
-                    <span>Xuất điểm Sheet</span>
-                  </button>
+                  {(historyClassFilter !== "all" || historyDateFilter || historyLevelFilter !== "all" || historyModeFilter !== "all" || historySearch) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setHistorySearch("");
+                        setHistoryClassFilter("all");
+                        setHistoryDateFilter("");
+                        setHistoryLevelFilter("all");
+                        setHistoryModeFilter("all");
+                      }}
+                      className="text-indigo-600 dark:text-indigo-400 hover:underline font-bold cursor-pointer flex items-center gap-1"
+                    >
+                      <RotateCcw className="w-3 h-3" />
+                      <span>Đặt lại bộ lọc</span>
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -1678,16 +1801,27 @@ export default function AdminDashboard({
                             )}
                           </div>
 
-                          {q.isCustom && (
+                          <div className="flex items-center gap-1 shrink-0">
                             <button
                               type="button"
-                              onClick={() => handleDeleteQuestion(q.id)}
-                              className="p-1 text-slate-400 hover:text-rose-600 rounded transition"
-                              title="Xóa câu hỏi tự tạo này"
+                              onClick={() => setEditingQuestion(q)}
+                              className="p-1.5 text-slate-500 hover:text-indigo-600 dark:text-slate-400 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 rounded-lg transition cursor-pointer"
+                              title="Sửa đổi, bổ sung câu hỏi này"
                             >
-                              <Trash2 className="w-4 h-4" />
+                              <Edit3 className="w-3.5 h-3.5" />
                             </button>
-                          )}
+
+                            {q.isCustom && (
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteQuestion(q.id)}
+                                className="p-1.5 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/50 rounded-lg transition cursor-pointer"
+                                title="Xóa câu hỏi tự tạo này"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
                         </div>
 
                         <p className="text-xs font-bold text-slate-800 mb-2 leading-relaxed">
@@ -2055,101 +2189,46 @@ export default function AdminDashboard({
         </div>
       )}
 
-      {/* MODAL 3: CHANGE USER PASSWORD */}
-      {changePasswordUser && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.95 }}
-            className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-4"
-          >
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <div className="flex items-center gap-2">
-                <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg">
-                  <KeyRound className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="font-black text-slate-800 text-base">Đổi mật khẩu tài khoản</h3>
-                  <p className="text-xs text-slate-500">
-                    Cập nhật mật khẩu cho học sinh
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setChangePasswordUser(null)}
-                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+      {/* MODAL 3: CHANGE PASSWORD FOR USER (FROM TABLE) */}
+      <ChangePasswordModal
+        isOpen={!!changePasswordUser}
+        onClose={() => setChangePasswordUser(null)}
+        userId={changePasswordUser?.id || ""}
+        username={changePasswordUser?.username || ""}
+        userName={changePasswordUser?.name || ""}
+        className={changePasswordUser?.className}
+        school={changePasswordUser?.school}
+        onSuccess={(msg) => {
+          notify(msg);
+          loadData();
+        }}
+      />
 
-            <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
-              <div className="text-xs text-slate-500">Tài khoản:</div>
-              <div className="font-bold text-slate-800 text-sm">{changePasswordUser.name}</div>
-              <div className="text-xs font-mono text-indigo-600">@{changePasswordUser.username}</div>
-              {changePasswordUser.className && (
-                <div className="text-[11px] text-slate-600">Lớp: {changePasswordUser.className} - {changePasswordUser.school}</div>
-              )}
-            </div>
+      {/* MODAL 4: CHANGE PASSWORD FOR CURRENT ADMIN */}
+      <ChangePasswordModal
+        isOpen={showAdminChangePassword}
+        onClose={() => setShowAdminChangePassword(false)}
+        userId={currentUser.id}
+        username={currentUser.username}
+        userName={currentUser.name}
+        className={currentUser.className}
+        school={currentUser.school}
+        onSuccess={(msg) => {
+          notify(msg);
+        }}
+      />
 
-            <form onSubmit={handleChangePassword} className="space-y-4">
-              <div className="space-y-1">
-                <label className="block text-[10px] font-extrabold uppercase font-mono text-slate-500">
-                  Mật khẩu mới
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={newPasswordInput}
-                  onChange={(e) => setNewPasswordInput(e.target.value)}
-                  placeholder="Nhập mật khẩu mới..."
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-mono font-bold text-slate-800 focus:bg-white focus:outline-none focus:border-indigo-500"
-                />
-                <div className="flex gap-2 pt-1">
-                  <button
-                    type="button"
-                    onClick={() => setNewPasswordInput("123")}
-                    className="text-[10px] font-mono px-2 py-0.5 bg-slate-100 hover:bg-slate-200 rounded text-slate-600"
-                  >
-                    Mặc định: 123
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setNewPasswordInput("123456")}
-                    className="text-[10px] font-mono px-2 py-0.5 bg-slate-100 hover:bg-slate-200 rounded text-slate-600"
-                  >
-                    123456
-                  </button>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setChangePasswordUser(null)}
-                  className="py-2.5 px-3 border border-slate-200 rounded-lg text-xs font-bold font-mono text-slate-500 hover:bg-slate-50 transition uppercase"
-                >
-                  Hủy bỏ
-                </button>
-                <button
-                  type="submit"
-                  disabled={isUpdatingPassword}
-                  className="py-2.5 px-3 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg text-xs font-bold font-mono transition uppercase shadow-md shadow-indigo-600/20 flex items-center justify-center gap-1.5"
-                >
-                  {isUpdatingPassword ? (
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Check className="w-4 h-4" />
-                  )}
-                  <span>Lưu mật khẩu</span>
-                </button>
-              </div>
-            </form>
-          </motion.div>
-        </div>
-      )}
+      {/* MODAL 5: EDIT / SUPPLEMENT QUESTION */}
+      <EditQuestionModal
+        isOpen={!!editingQuestion}
+        onClose={() => setEditingQuestion(null)}
+        question={editingQuestion}
+        onSuccess={(updated) => {
+          notify(`Đã cập nhật câu hỏi thành công!`);
+          loadData();
+          onQuestionsUpdated?.();
+        }}
+      />
 
     </div>
   );

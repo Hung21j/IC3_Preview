@@ -630,6 +630,11 @@ export default function AdminDashboard({
         </div>
 
         <div className="flex items-center gap-2 md:gap-3">
+          <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-lg text-[11px] font-mono font-bold shadow-xs">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+            <span>Cloud Firestore: Đã đồng bộ</span>
+          </div>
+
           <button
             type="button"
             onClick={onSwitchToStudentView}

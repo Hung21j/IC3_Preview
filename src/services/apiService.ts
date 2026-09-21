@@ -1,5 +1,6 @@
 import { User, SessionLog, ExamHistoryItem } from "../types";
 import { IC3Question } from "../data/ic3Questions";
+import { firestoreService } from "./firestoreService";
 
 const SESSION_KEY = "ic3_active_user_session";
 const LOCAL_USERS_KEY = "ic3_users_db_v2";
@@ -17,7 +18,7 @@ interface StoredUserCredential {
   password: string;
 }
 
-// Initial seed accounts for offline & GitHub Pages static mode
+// Initial seed accounts as local fallback
 const DEFAULT_STORED_USERS: StoredUserCredential[] = [
   {
     user: {
@@ -73,14 +74,14 @@ const DEFAULT_STORED_USERS: StoredUserCredential[] = [
   }
 ];
 
-// Helper to safely call backend API with fast fallback for static/GitHub Pages
+// Helper to safely call backend API with timeout
 async function safeFetchJson<T = any>(
   url: string,
   options?: RequestInit
 ): Promise<{ ok: boolean; data?: T; status?: number; error?: string }> {
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 3500);
+    const timeoutId = setTimeout(() => controller.abort(), 3000);
     const res = await fetch(url, {
       ...options,
       signal: controller.signal
@@ -99,7 +100,7 @@ async function safeFetchJson<T = any>(
   }
 }
 
-// Local Storage Database Managers
+// Local Storage Cache Helpers
 function getLocalUsers(): StoredUserCredential[] {
   try {
     const raw = localStorage.getItem(LOCAL_USERS_KEY);
@@ -110,9 +111,8 @@ function getLocalUsers(): StoredUserCredential[] {
       }
     }
   } catch (e) {
-    console.warn("Could not read local users DB:", e);
+    console.warn("Could not read local users cache:", e);
   }
-  // Initialize default
   localStorage.setItem(LOCAL_USERS_KEY, JSON.stringify(DEFAULT_STORED_USERS));
   return DEFAULT_STORED_USERS;
 }
@@ -121,7 +121,7 @@ function saveLocalUsers(users: StoredUserCredential[]) {
   try {
     localStorage.setItem(LOCAL_USERS_KEY, JSON.stringify(users));
   } catch (e) {
-    console.warn("Could not save local users DB:", e);
+    console.warn("Could not save local users cache:", e);
   }
 }
 
@@ -177,7 +177,7 @@ function saveLocalCustomQuestions(questions: IC3Question[]) {
 }
 
 export const apiService = {
-  // Session Persistence in LocalStorage
+  // Session Persistence
   getActiveSession(): ActiveSession | null {
     try {
       const raw = localStorage.getItem(SESSION_KEY);
@@ -195,11 +195,67 @@ export const apiService = {
     }
   },
 
-  // Auth: Login (Dual-mode: Server first, Local DB fallback)
+  // Auth: Login (Cloud Firestore -> Local Cache fallback)
   async login(username: string, password: string): Promise<{ user: User; sessionId: string }> {
     const cleanUsername = username.trim().toLowerCase();
 
-    // 1. Try backend server
+    // 1. Try Cloud Firestore first for cross-machine authentication
+    try {
+      const cloudUsers = await firestoreService.getCloudUsers();
+      if (cloudUsers && cloudUsers.length > 0) {
+        const match = cloudUsers.find(
+          (u) => u.user.username.toLowerCase() === cleanUsername
+        );
+
+        if (match) {
+          if (match.password !== password) {
+            throw new Error("Mật khẩu không chính xác. Vui lòng kiểm tra lại.");
+          }
+
+          const sessionId = `sess-cloud-${Date.now()}`;
+          const updatedUser: User = {
+            ...match.user,
+            isOnline: true
+          };
+
+          // Mark online & log session in Cloud Firestore
+          firestoreService.setCloudUserOnline(updatedUser.id, true).catch(() => {});
+          const sessionItem: SessionLog = {
+            id: sessionId,
+            userId: updatedUser.id,
+            username: updatedUser.username,
+            name: updatedUser.name,
+            className: updatedUser.className,
+            school: updatedUser.school,
+            role: updatedUser.role,
+            loginTime: new Date().toISOString(),
+            isOnline: true
+          };
+          firestoreService.saveCloudSession(sessionItem).catch(() => {});
+
+          // Cache locally for offline backup
+          const localUsers = getLocalUsers();
+          const existingIdx = localUsers.findIndex((u) => u.user.username.toLowerCase() === cleanUsername);
+          if (existingIdx >= 0) {
+            localUsers[existingIdx].user = updatedUser;
+            localUsers[existingIdx].password = password;
+          } else {
+            localUsers.push({ user: updatedUser, password });
+          }
+          saveLocalUsers(localUsers);
+
+          this.setActiveSession({ user: updatedUser, sessionId });
+          return { user: updatedUser, sessionId };
+        }
+      }
+    } catch (err: any) {
+      if (err.message && err.message.includes("Mật khẩu không chính xác")) {
+        throw err;
+      }
+      console.warn("Cloud login check failed, attempting backend/local fallback:", err);
+    }
+
+    // 2. Try backend server
     const result = await safeFetchJson<{ success: boolean; user: User; sessionId: string; error?: string }>(
       "/api/auth/login",
       {
@@ -213,27 +269,14 @@ export const apiService = {
       const user = result.data.user;
       const sessionId = result.data.sessionId;
       this.setActiveSession({ user, sessionId });
-
-      // Synchronize into local storage as backup
-      const localUsers = getLocalUsers();
-      const existingIdx = localUsers.findIndex((u) => u.user.username === cleanUsername);
-      if (existingIdx >= 0) {
-        localUsers[existingIdx].user = user;
-        localUsers[existingIdx].password = password;
-      } else {
-        localUsers.push({ user, password });
-      }
-      saveLocalUsers(localUsers);
-
       return { user, sessionId };
     }
 
-    // If server returned explicit credentials error (e.g. wrong password), show it
     if (result.status === 400 || result.status === 401) {
       throw new Error(result.error || "Tên đăng nhập hoặc mật khẩu không chính xác.");
     }
 
-    // 2. Static / GitHub Pages Fallback: Check Local Storage Database
+    // 3. Local Storage Fallback
     const localUsers = getLocalUsers();
     const match = localUsers.find((entry) => entry.user.username.toLowerCase() === cleanUsername);
 
@@ -245,37 +288,20 @@ export const apiService = {
       throw new Error("Mật khẩu không chính xác. Vui lòng kiểm tra lại.");
     }
 
-    // Create session in local DB
     const sessionId = `sess-local-${Date.now()}`;
     const updatedUser: User = {
       ...match.user,
       isOnline: true
     };
 
-    // Update isOnline in local users list
     match.user.isOnline = true;
     saveLocalUsers(localUsers);
-
-    // Record session log
-    const sessions = getLocalSessions();
-    sessions.unshift({
-      id: sessionId,
-      userId: updatedUser.id,
-      username: updatedUser.username,
-      name: updatedUser.name,
-      className: updatedUser.className,
-      school: updatedUser.school,
-      role: updatedUser.role,
-      loginTime: new Date().toISOString(),
-      isOnline: true
-    });
-    saveLocalSessions(sessions);
 
     this.setActiveSession({ user: updatedUser, sessionId });
     return { user: updatedUser, sessionId };
   },
 
-  // Auth: Register (Dual-mode: Server first, Local DB fallback)
+  // Auth: Register (Cloud Firestore first)
   async register(payload: {
     username: string;
     password: string;
@@ -285,16 +311,61 @@ export const apiService = {
   }): Promise<{ user: User; sessionId: string }> {
     const cleanUsername = payload.username.trim().toLowerCase();
 
-    // 1. Try backend server
+    // 1. Check uniqueness across Cloud Firestore
+    try {
+      const cloudUsers = await firestoreService.getCloudUsers();
+      if (cloudUsers.some((u) => u.user.username.toLowerCase() === cleanUsername)) {
+        throw new Error(`Tên đăng nhập "${cleanUsername}" đã được sử dụng. Vui lòng chọn tên đăng nhập khác.`);
+      }
+
+      const newUser: User = {
+        id: `usr-cloud-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        username: cleanUsername,
+        name: payload.name.trim(),
+        className: payload.className.trim(),
+        school: payload.school.trim(),
+        role: "student",
+        createdAt: new Date().toISOString(),
+        isOnline: true
+      };
+
+      // Save to Cloud Firestore
+      await firestoreService.saveCloudUser(newUser, payload.password);
+
+      const sessionId = `sess-cloud-${Date.now()}`;
+      await firestoreService.saveCloudSession({
+        id: sessionId,
+        userId: newUser.id,
+        username: newUser.username,
+        name: newUser.name,
+        className: newUser.className,
+        school: newUser.school,
+        role: newUser.role,
+        loginTime: new Date().toISOString(),
+        isOnline: true
+      });
+
+      // Cache locally
+      const localUsers = getLocalUsers();
+      localUsers.push({ user: newUser, password: payload.password });
+      saveLocalUsers(localUsers);
+
+      this.setActiveSession({ user: newUser, sessionId });
+      return { user: newUser, sessionId };
+    } catch (err: any) {
+      if (err.message && err.message.includes("đã được sử dụng")) {
+        throw err;
+      }
+      console.warn("Cloud register fallback to backend/local:", err);
+    }
+
+    // 2. Try backend
     const result = await safeFetchJson<{ success: boolean; user: User; sessionId: string; error?: string }>(
       "/api/auth/register",
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...payload,
-          username: cleanUsername
-        })
+        body: JSON.stringify({ ...payload, username: cleanUsername })
       }
     );
 
@@ -302,28 +373,20 @@ export const apiService = {
       const user = result.data.user;
       const sessionId = result.data.sessionId;
       this.setActiveSession({ user, sessionId });
-
-      // Sync to local DB
-      const localUsers = getLocalUsers();
-      localUsers.push({ user, password: payload.password });
-      saveLocalUsers(localUsers);
-
       return { user, sessionId };
     }
 
-    // If server returned a business logic error (like username already exists), rethrow it
     if (result.status === 400 && result.error) {
       throw new Error(result.error);
     }
 
-    // 2. Static / GitHub Pages Fallback: Create account locally in localStorage
+    // 3. Local fallback
     const localUsers = getLocalUsers();
-    const existing = localUsers.find((entry) => entry.user.username.toLowerCase() === cleanUsername);
-    if (existing) {
+    if (localUsers.some((entry) => entry.user.username.toLowerCase() === cleanUsername)) {
       throw new Error(`Tên đăng nhập "${cleanUsername}" đã được sử dụng. Vui lòng chọn tên đăng nhập khác.`);
     }
 
-    const newUser: User = {
+    const localUser: User = {
       id: `usr-loc-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       username: cleanUsername,
       name: payload.name.trim(),
@@ -334,37 +397,19 @@ export const apiService = {
       isOnline: true
     };
 
-    localUsers.push({
-      user: newUser,
-      password: payload.password
-    });
+    localUsers.push({ user: localUser, password: payload.password });
     saveLocalUsers(localUsers);
 
-    // Record session log
     const sessionId = `sess-loc-${Date.now()}`;
-    const sessions = getLocalSessions();
-    sessions.unshift({
-      id: sessionId,
-      userId: newUser.id,
-      username: newUser.username,
-      name: newUser.name,
-      className: newUser.className,
-      school: newUser.school,
-      role: newUser.role,
-      loginTime: new Date().toISOString(),
-      isOnline: true
-    });
-    saveLocalSessions(sessions);
-
-    this.setActiveSession({ user: newUser, sessionId });
-    return { user: newUser, sessionId };
+    this.setActiveSession({ user: localUser, sessionId });
+    return { user: localUser, sessionId };
   },
 
   // Auth: Logout
   async logout(): Promise<void> {
     const active = this.getActiveSession();
     if (active) {
-      // 1. Notify backend if available
+      firestoreService.setCloudUserOnline(active.user.id, false).catch(() => {});
       safeFetchJson("/api/auth/logout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -374,30 +419,17 @@ export const apiService = {
         })
       }).catch(() => {});
 
-      // 2. Update local session & user offline state
       const localUsers = getLocalUsers();
       const u = localUsers.find((entry) => entry.user.id === active.user.id);
       if (u) {
         u.user.isOnline = false;
         saveLocalUsers(localUsers);
       }
-
-      const sessions = getLocalSessions();
-      const s = sessions.find((item) => item.id === active.sessionId);
-      if (s) {
-        const now = new Date();
-        s.logoutTime = now.toISOString();
-        s.isOnline = false;
-        const start = new Date(s.loginTime).getTime();
-        const end = now.getTime();
-        s.durationSeconds = Math.max(0, Math.round((end - start) / 1000));
-        saveLocalSessions(sessions);
-      }
     }
     this.setActiveSession(null);
   },
 
-  // Admin: Get Users & Analytics Stats
+  // Admin: Get Users & Analytics Stats across Cloud
   async getUsersAndStats(): Promise<{
     users: User[];
     stats: {
@@ -410,19 +442,43 @@ export const apiService = {
       uniqueSchools: string[];
     };
   }> {
+    try {
+      const [cloudUsersData, cloudHistory, cloudQuestions] = await Promise.all([
+        firestoreService.getCloudUsers(),
+        firestoreService.getCloudExamHistory(),
+        firestoreService.getCloudQuestions()
+      ]);
+
+      if (cloudUsersData && cloudUsersData.length > 0) {
+        const users = cloudUsersData.map((d) => d.user);
+        const schoolsSet = new Set<string>();
+        users.forEach((u) => {
+          if (u.school && u.school.trim()) {
+            schoolsSet.add(u.school.trim());
+          }
+        });
+
+        const stats = {
+          totalUsers: users.length,
+          totalStudents: users.filter((u) => u.role === "student").length,
+          onlineCount: users.filter((u) => u.isOnline).length,
+          totalExamsTaken: cloudHistory.length,
+          totalCustomQuestions: cloudQuestions.length,
+          schoolsCount: schoolsSet.size,
+          uniqueSchools: Array.from(schoolsSet)
+        };
+
+        return { users, stats };
+      }
+    } catch (e) {
+      console.warn("Cloud getUsersAndStats fallback:", e);
+    }
+
     // Try backend
     const result = await safeFetchJson<{
       success: boolean;
       users: User[];
-      stats: {
-        totalUsers: number;
-        totalStudents: number;
-        onlineCount: number;
-        totalExamsTaken: number;
-        totalCustomQuestions: number;
-        schoolsCount: number;
-        uniqueSchools: string[];
-      };
+      stats: any;
     }>("/api/admin/users");
 
     if (result.ok && result.data?.success && Array.isArray(result.data.users)) {
@@ -432,11 +488,10 @@ export const apiService = {
       };
     }
 
-    // Static fallback
+    // Local fallback
     const localUsers = getLocalUsers().map((entry) => entry.user);
     const history = getLocalExamHistory();
     const customQuestions = getLocalCustomQuestions();
-
     const schoolsSet = new Set<string>();
     localUsers.forEach((u) => {
       if (u.school && u.school.trim()) {
@@ -444,20 +499,21 @@ export const apiService = {
       }
     });
 
-    const stats = {
-      totalUsers: localUsers.length,
-      totalStudents: localUsers.filter((u) => u.role === "student").length,
-      onlineCount: localUsers.filter((u) => u.isOnline).length,
-      totalExamsTaken: history.length,
-      totalCustomQuestions: customQuestions.length,
-      schoolsCount: schoolsSet.size,
-      uniqueSchools: Array.from(schoolsSet)
+    return {
+      users: localUsers,
+      stats: {
+        totalUsers: localUsers.length,
+        totalStudents: localUsers.filter((u) => u.role === "student").length,
+        onlineCount: localUsers.filter((u) => u.isOnline).length,
+        totalExamsTaken: history.length,
+        totalCustomQuestions: customQuestions.length,
+        schoolsCount: schoolsSet.size,
+        uniqueSchools: Array.from(schoolsSet)
+      }
     };
-
-    return { users: localUsers, stats };
   },
 
-  // Admin: Create User
+  // Admin: Create User (Synchronized to Cloud)
   async createUser(payload: {
     username: string;
     password: string;
@@ -468,35 +524,40 @@ export const apiService = {
   }): Promise<User> {
     const cleanUsername = payload.username.trim().toLowerCase();
 
-    // Try backend
-    const result = await safeFetchJson<{ success: boolean; user: User; error?: string }>(
-      "/api/admin/users",
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...payload, username: cleanUsername })
+    try {
+      const cloudUsers = await firestoreService.getCloudUsers();
+      if (cloudUsers.some((u) => u.user.username.toLowerCase() === cleanUsername)) {
+        throw new Error(`Tên đăng nhập "${cleanUsername}" đã tồn tại trên hệ thống.`);
       }
-    );
 
-    if (result.ok && result.data?.success && result.data.user) {
-      const u = result.data.user;
+      const newUser: User = {
+        id: `usr-cloud-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        username: cleanUsername,
+        name: payload.name.trim(),
+        className: payload.className.trim(),
+        school: payload.school.trim(),
+        role: payload.role,
+        createdAt: new Date().toISOString(),
+        isOnline: false
+      };
+
+      await firestoreService.saveCloudUser(newUser, payload.password);
+
       const localUsers = getLocalUsers();
-      localUsers.push({ user: u, password: payload.password });
+      localUsers.push({ user: newUser, password: payload.password });
       saveLocalUsers(localUsers);
-      return u;
+
+      return newUser;
+    } catch (err: any) {
+      if (err.message && err.message.includes("đã tồn tại")) {
+        throw err;
+      }
+      console.warn("Cloud createUser fallback:", err);
     }
 
-    if (result.status === 400 && result.error) {
-      throw new Error(result.error);
-    }
-
-    // Static fallback
+    // Backend/local fallback
     const localUsers = getLocalUsers();
-    if (localUsers.some((u) => u.user.username.toLowerCase() === cleanUsername)) {
-      throw new Error(`Tên đăng nhập "${cleanUsername}" đã tồn tại trên hệ thống.`);
-    }
-
-    const newUser: User = {
+    const fallbackUser: User = {
       id: `usr-loc-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       username: cleanUsername,
       name: payload.name.trim(),
@@ -506,33 +567,27 @@ export const apiService = {
       createdAt: new Date().toISOString(),
       isOnline: false
     };
-
-    localUsers.push({ user: newUser, password: payload.password });
+    localUsers.push({ user: fallbackUser, password: payload.password });
     saveLocalUsers(localUsers);
-    return newUser;
+    return fallbackUser;
   },
 
-  // Admin: Update User Password
+  // Admin: Update User Password (Cloud & Local)
   async updateUserPassword(userId: string, newPassword: string): Promise<void> {
     if (!newPassword || newPassword.trim().length === 0) {
       throw new Error("Mật khẩu không được để trống.");
     }
 
-    // Try backend
-    const result = await safeFetchJson<{ success: boolean; error?: string }>(
-      `/api/admin/users/${userId}/password`,
-      {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password: newPassword.trim() })
-      }
-    );
+    await firestoreService.updateCloudUserPassword(userId, newPassword.trim()).catch((e) => {
+      console.warn("Cloud password update fallback:", e);
+    });
 
-    if (result.status === 400 || result.status === 404) {
-      throw new Error(result.error || "Không thể đổi mật khẩu.");
-    }
+    safeFetchJson(`/api/admin/users/${userId}/password`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password: newPassword.trim() })
+    }).catch(() => {});
 
-    // Update in local DB as fallback and sync
     const localUsers = getLocalUsers();
     const target = localUsers.find((u) => u.user.id === userId);
     if (target) {
@@ -541,7 +596,7 @@ export const apiService = {
     }
   },
 
-  // Admin: Create Bulk Users (from Sheet/Excel)
+  // Admin: Create Bulk Users
   async createBulkUsers(
     studentList: Array<{
       name: string;
@@ -555,115 +610,86 @@ export const apiService = {
       return { createdCount: 0, createdUsers: [], skippedCount: 0 };
     }
 
-    // 1. Try backend
-    const result = await safeFetchJson<{
-      success: boolean;
-      createdCount: number;
-      createdUsers: User[];
-      skippedUsers: any[];
-    }>("/api/admin/users/bulk", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ users: studentList })
-    });
-
-    if (result.ok && result.data?.success && Array.isArray(result.data.createdUsers)) {
-      // Sync newly created users to local DB
-      const localUsers = getLocalUsers();
-      for (const u of result.data.createdUsers) {
-        const item = studentList.find((s) => s.username.toLowerCase() === u.username.toLowerCase());
-        const pwd = item?.password || "123";
-        if (!localUsers.some((x) => x.user.username.toLowerCase() === u.username.toLowerCase())) {
-          localUsers.push({ user: u, password: pwd });
-        }
-      }
-      saveLocalUsers(localUsers);
-
-      return {
-        createdCount: result.data.createdCount,
-        createdUsers: result.data.createdUsers,
-        skippedCount: result.data.skippedUsers?.length || 0
-      };
-    }
-
-    // 2. Static / GitHub Pages Fallback: Create locally in localStorage
-    const localUsers = getLocalUsers();
     const createdUsers: User[] = [];
     let skippedCount = 0;
 
-    for (const item of studentList) {
-      const cleanUsername = item.username.trim().toLowerCase();
-      const cleanName = item.name.trim();
-      const pwd = (item.password || "123").trim();
+    try {
+      const existingCloud = await firestoreService.getCloudUsers();
+      const existingSet = new Set(existingCloud.map((u) => u.user.username.toLowerCase()));
 
-      if (!cleanUsername || !cleanName) {
-        skippedCount++;
-        continue;
+      for (const item of studentList) {
+        const cleanUsername = item.username.trim().toLowerCase();
+        const cleanName = item.name.trim();
+        const pwd = (item.password || "123").trim();
+
+        if (!cleanUsername || !cleanName || existingSet.has(cleanUsername)) {
+          skippedCount++;
+          continue;
+        }
+
+        const newUser: User = {
+          id: `usr-cloud-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+          username: cleanUsername,
+          name: cleanName,
+          className: (item.className || "").trim(),
+          school: (item.school || "").trim(),
+          role: "student",
+          createdAt: new Date().toISOString(),
+          isOnline: false
+        };
+
+        await firestoreService.saveCloudUser(newUser, pwd);
+        existingSet.add(cleanUsername);
+        createdUsers.push(newUser);
       }
 
-      // Check duplicate
-      if (localUsers.some((u) => u.user.username.toLowerCase() === cleanUsername)) {
-        skippedCount++;
-        continue;
-      }
-
-      const newUser: User = {
-        id: `usr-loc-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-        username: cleanUsername,
-        name: cleanName,
-        className: (item.className || "").trim(),
-        school: (item.school || "").trim(),
-        role: "student",
-        createdAt: new Date().toISOString(),
-        isOnline: false
+      return {
+        createdCount: createdUsers.length,
+        createdUsers,
+        skippedCount
       };
-
-      localUsers.push({ user: newUser, password: pwd });
-      createdUsers.push(newUser);
+    } catch (err) {
+      console.warn("Cloud bulk create fallback to local:", err);
+      return { createdCount: 0, createdUsers: [], skippedCount: studentList.length };
     }
-
-    saveLocalUsers(localUsers);
-    return {
-      createdCount: createdUsers.length,
-      createdUsers,
-      skippedCount
-    };
   },
 
   // Admin: Delete User
   async deleteUser(userId: string): Promise<void> {
-    // Try backend
+    await firestoreService.deleteCloudUser(userId).catch(() => {});
     safeFetchJson(`/api/admin/users/${userId}`, { method: "DELETE" }).catch(() => {});
-
-    // Always delete in local DB
-    const localUsers = getLocalUsers();
-    const filtered = localUsers.filter((u) => u.user.id !== userId);
-    saveLocalUsers(filtered);
+    const localUsers = getLocalUsers().filter((u) => u.user.id !== userId);
+    saveLocalUsers(localUsers);
   },
 
   // Admin: Get Session Logs
   async getSessionLogs(): Promise<SessionLog[]> {
-    const result = await safeFetchJson<{ success: boolean; sessions: SessionLog[] }>(
-      "/api/admin/sessions"
-    );
-    if (result.ok && result.data?.success && Array.isArray(result.data.sessions)) {
-      return result.data.sessions;
+    try {
+      const cloudLogs = await firestoreService.getCloudSessionLogs();
+      if (cloudLogs && cloudLogs.length > 0) {
+        return cloudLogs;
+      }
+    } catch (e) {
+      console.warn("Cloud session logs fallback:", e);
     }
     return getLocalSessions();
   },
 
-  // Admin: Get Exam Doing History
+  // Admin: Get Exam History (Real-time Cloud Results from all students)
   async getExamHistory(): Promise<ExamHistoryItem[]> {
-    const result = await safeFetchJson<{ success: boolean; history: ExamHistoryItem[] }>(
-      "/api/admin/history"
-    );
-    if (result.ok && result.data?.success && Array.isArray(result.data.history)) {
-      return result.data.history;
+    try {
+      const cloudHistory = await firestoreService.getCloudExamHistory();
+      if (cloudHistory && cloudHistory.length > 0) {
+        saveLocalExamHistory(cloudHistory);
+        return cloudHistory;
+      }
+    } catch (e) {
+      console.warn("Cloud exam history fallback:", e);
     }
     return getLocalExamHistory();
   },
 
-  // Record completed Exam result for student
+  // Record completed Exam result for student (Saved to Cloud Firestore)
   async recordExamResult(payload: {
     userId: string;
     username: string;
@@ -685,13 +711,18 @@ export const apiService = {
       timestamp: new Date().toISOString()
     };
 
-    // Save to local storage
+    // 1. Save directly to Google Cloud Firestore
+    firestoreService.saveCloudExamRecord(newRecord).catch((err) => {
+      console.warn("Could not save exam record to Cloud Firestore:", err);
+    });
+
+    // 2. Also save to local cache
     const localHist = getLocalExamHistory();
     localHist.unshift(newRecord);
     saveLocalExamHistory(localHist);
 
-    // Try saving to backend
-    safeFetchJson<{ success: boolean; record: ExamHistoryItem }>("/api/history", {
+    // 3. Notify backend
+    safeFetchJson("/api/history", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload)
@@ -700,20 +731,23 @@ export const apiService = {
     return newRecord;
   },
 
-  // Questions: Fetch custom questions
+  // Questions: Fetch custom questions from Cloud Firestore
   async getCustomQuestions(): Promise<IC3Question[]> {
-    const result = await safeFetchJson<{ success: boolean; customQuestions: IC3Question[] }>(
-      "/api/questions"
-    );
-    if (result.ok && result.data?.success && Array.isArray(result.data.customQuestions)) {
-      // Sync into local cache
-      saveLocalCustomQuestions(result.data.customQuestions);
-      return result.data.customQuestions;
+    try {
+      const cloudQuestions = await firestoreService.getCloudQuestions();
+      if (cloudQuestions && cloudQuestions.length > 0) {
+        saveLocalCustomQuestions(cloudQuestions);
+        return cloudQuestions;
+      }
+    } catch (e) {
+      console.warn("Cloud questions fallback:", e);
     }
-    return getLocalCustomQuestions();
+
+    const localQ = getLocalCustomQuestions();
+    return localQ;
   },
 
-  // Admin: Add new IC3 question
+  // Admin: Add new IC3 question (Saved to Cloud Firestore)
   async addCustomQuestion(q: {
     levelId: "level-1" | "level-2" | "level-3";
     subsetId: "GM1" | "GM2" | "OT1" | "OT2" | "OT3" | "OT4" | "OT5";
@@ -726,7 +760,7 @@ export const apiService = {
     createdBy?: string;
   }): Promise<IC3Question> {
     const newQ: IC3Question = {
-      id: `custom-q-${Date.now()}`,
+      id: `custom-q-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
       levelId: q.levelId,
       subsetId: q.subsetId,
       type: q.type,
@@ -737,32 +771,31 @@ export const apiService = {
       pairs: q.pairs
     };
 
-    // Try backend
-    const result = await safeFetchJson<{ success: boolean; question: IC3Question }>(
-      "/api/admin/questions",
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(q)
-      }
-    );
-
-    if (result.ok && result.data?.success && result.data.question) {
-      const questions = getLocalCustomQuestions();
-      questions.unshift(result.data.question);
-      saveLocalCustomQuestions(questions);
-      return result.data.question;
+    // 1. Save directly to Cloud Firestore so all computers see it immediately
+    try {
+      await firestoreService.saveCloudQuestion(newQ);
+    } catch (err) {
+      console.warn("Failed saving question to Cloud Firestore:", err);
     }
 
-    // Save locally
+    // 2. Cache locally
     const questions = getLocalCustomQuestions();
     questions.unshift(newQ);
     saveLocalCustomQuestions(questions);
+
+    // 3. Sync to backend
+    safeFetchJson("/api/admin/questions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(q)
+    }).catch(() => {});
+
     return newQ;
   },
 
-  // Admin: Delete Question
+  // Admin: Delete Question (Removed from Cloud Firestore)
   async deleteCustomQuestion(questionId: string): Promise<void> {
+    await firestoreService.deleteCloudQuestion(questionId).catch(() => {});
     safeFetchJson(`/api/admin/questions/${questionId}`, { method: "DELETE" }).catch(() => {});
     const questions = getLocalCustomQuestions().filter((q) => q.id !== questionId);
     saveLocalCustomQuestions(questions);

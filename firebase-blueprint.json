@@ -1,0 +1,97 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User account for student or administrator",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "username": { "type": "string" },
+        "password": { "type": "string" },
+        "name": { "type": "string" },
+        "className": { "type": "string" },
+        "school": { "type": "string" },
+        "role": { "type": "string", "enum": ["student", "admin"] },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["username", "name", "role"]
+    },
+    "CustomQuestion": {
+      "title": "CustomQuestion",
+      "description": "Custom IC3 question created by teacher/admin",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "levelId": { "type": "string" },
+        "subsetId": { "type": "string" },
+        "type": { "type": "string", "enum": ["multiple_choice", "yes_no", "matching"] },
+        "text": { "type": "string" },
+        "options": { "type": "array" },
+        "correctAnswerText": { "type": "string" },
+        "correctKeys": { "type": "array" },
+        "pairs": { "type": "array" },
+        "createdBy": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["levelId", "subsetId", "type", "text"]
+    },
+    "ExamRecord": {
+      "title": "ExamRecord",
+      "description": "Exam result record submitted by student",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "username": { "type": "string" },
+        "studentName": { "type": "string" },
+        "className": { "type": "string" },
+        "school": { "type": "string" },
+        "level": { "type": "string" },
+        "subset": { "type": "string" },
+        "mode": { "type": "string" },
+        "correctCount": { "type": "number" },
+        "wrongCount": { "type": "number" },
+        "totalCount": { "type": "number" },
+        "scorePercent": { "type": "number" },
+        "timeTaken": { "type": "number" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["username", "studentName", "level", "subset", "mode", "scorePercent"]
+    },
+    "SessionLog": {
+      "title": "SessionLog",
+      "description": "User login session history log",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "username": { "type": "string" },
+        "name": { "type": "string" },
+        "role": { "type": "string" },
+        "className": { "type": "string" },
+        "school": { "type": "string" },
+        "loginAt": { "type": "string" },
+        "duration": { "type": "number" }
+      },
+      "required": ["username", "loginAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Registered students and teachers"
+    },
+    "/questions/{questionId}": {
+      "schema": "CustomQuestion",
+      "description": "Question bank custom questions"
+    },
+    "/examHistory/{historyId}": {
+      "schema": "ExamRecord",
+      "description": "Student exam results and test scores"
+    },
+    "/sessionLogs/{sessionId}": {
+      "schema": "SessionLog",
+      "description": "Login session activity logs"
+    }
+  }
+}

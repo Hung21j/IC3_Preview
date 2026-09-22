@@ -601,6 +601,7 @@ export default function AdminDashboard({
         options,
         correctAnswerText: correctAnswerNote.trim() || defaultAnswerText,
         correctKeys: finalCorrectKeys,
+        statements,
         pairs,
         order: typeof qOrder === "number" ? qOrder : undefined,
         createdBy: currentUser.username
@@ -612,6 +613,11 @@ export default function AdminDashboard({
       setMcOptions(["", "", "", ""]);
       setMcCorrectKeys(["A"]);
       setCorrectAnswerNote("");
+      setYesNoStatements([
+        { text: "", correct: "True" },
+        { text: "", correct: "False" },
+        { text: "", correct: "True" }
+      ]);
       if (qType === "matching") {
         setMatchingPairs([
           { left: "", right: "" },

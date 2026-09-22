@@ -147,6 +147,13 @@ export default function AdminDashboard({
   const [mcOptions, setMcOptions] = useState<string[]>(["", "", "", ""]);
   const [mcCorrectKeys, setMcCorrectKeys] = useState<string[]>(["A"]);
   const [correctKey, setCorrectKey] = useState("True"); // for Yes/No
+  const [yesNoStatements, setYesNoStatements] = useState<
+    { text: string; correct: "True" | "False" }[]
+  >([
+    { text: "", correct: "True" },
+    { text: "", correct: "False" },
+    { text: "", correct: "True" }
+  ]);
   const [correctAnswerNote, setCorrectAnswerNote] = useState("");
   const [matchingPairs, setMatchingPairs] = useState<Array<{ left: string; right: string }>>([
     { left: "", right: "" },
@@ -160,6 +167,56 @@ export default function AdminDashboard({
       copy[index] = value;
       return copy;
     });
+  };
+
+  const updateYesNoStatement = (
+    index: number,
+    field: "text" | "correct",
+    value: string
+  ) => {
+    setYesNoStatements((prev) => {
+      const copy = [...prev];
+
+      if (field === "text") {
+        copy[index] = {
+          ...copy[index],
+          text: value
+        };
+      } else {
+        copy[index] = {
+          ...copy[index],
+          correct: value as "True" | "False"
+        };
+      }
+
+      return copy;
+    });
+  };
+
+  const addYesNoStatement = () => {
+    if (yesNoStatements.length >= 10) {
+      alert("Tối đa 10 phát biểu cho một câu hỏi.");
+      return;
+    }
+
+    setYesNoStatements((prev) => [
+      ...prev,
+      {
+        text: "",
+        correct: "True"
+      }
+    ]);
+  };
+
+  const removeYesNoStatement = (index: number) => {
+    if (yesNoStatements.length <= 2) {
+      alert("Cần tối thiểu 2 phát biểu.");
+      return;
+    }
+
+    setYesNoStatements((prev) =>
+      prev.filter((_, i) => i !== index)
+    );
   };
 
   const addMcOption = () => {
@@ -467,6 +524,10 @@ export default function AdminDashboard({
     let finalCorrectKeys: string[] | undefined = [correctKey];
     let pairs: { left: string; right: string }[] | undefined = undefined;
 
+    let statements:
+    | { text: string; correct: "True" | "False" }[]
+    | undefined = undefined;
+
     if (qType === "multiple_choice") {
       const trimmedOptions = mcOptions.map((o) => o.trim());
       if (trimmedOptions.some((o) => !o)) {
@@ -480,7 +541,22 @@ export default function AdminDashboard({
       options = trimmedOptions.map((optText, idx) => `${String.fromCharCode(65 + idx)}. ${optText}`);
       finalCorrectKeys = [...mcCorrectKeys].sort();
     } else if (qType === "yes_no") {
-      finalCorrectKeys = [correctKey]; // "True" or "False"
+        const validStatements = yesNoStatements
+          .map((statement) => ({
+            text: statement.text.trim(),
+            correct: statement.correct
+          }))
+          .filter((statement) => statement.text);
+
+        if (validStatements.length < 2) {
+          alert("Vui lòng nhập ít nhất 2 phát biểu.");
+          return;
+        }
+
+        statements = validStatements;
+
+        // Không còn dùng correctKeys cho dạng mới
+        finalCorrectKeys = undefined;
     } else if (qType === "matching") {
       const validPairs = matchingPairs
         .map((p) => ({ left: p.left.trim(), right: p.right.trim() }))
@@ -501,8 +577,17 @@ export default function AdminDashboard({
       } else {
         defaultAnswerText = options.filter((o) => finalCorrectKeys!.includes(o.charAt(0))).join(" | ");
       }
-    } else if (qType === "yes_no") {
-      defaultAnswerText = correctKey === "True" ? "Đúng (True)" : "Sai (False)";
+    } else if (qType === "yes_no" && statements) {
+      defaultAnswerText = statements
+        .map(
+          (statement, index) =>
+            `${index + 1}. ${
+              statement.correct === "True"
+                ? "Đúng"
+                : "Sai"
+            }`
+        )
+        .join("\n");      
     } else if (qType === "matching" && pairs) {
       defaultAnswerText = pairs.map((p) => `• ${p.left} ➔ ${p.right}`).join("\n");
     }
@@ -1716,7 +1801,7 @@ export default function AdminDashboard({
                     </div>
                   )}
 
-                  {/* Yes/No Correct Key */}
+                  {/* Yes/No Correct Key 
                   {qType === "yes_no" && (
                     <div className="space-y-1 pt-1 border-t border-slate-100">
                       <label className="block text-[10px] font-extrabold uppercase font-mono text-slate-500">
@@ -1746,6 +1831,124 @@ export default function AdminDashboard({
                           Sai (False)
                         </button>
                       </div>
+                    </div>
+                  )} */}
+
+                  {qType === "yes_no" && (
+                    <div className="space-y-3 pt-1 border-t border-slate-100">
+
+                      <div className="flex items-center justify-between">
+                        <label className="block text-[10px] font-extrabold uppercase font-mono text-slate-500">
+                          Các phát biểu Đúng / Sai
+                        </label>
+
+                        <button
+                          type="button"
+                          onClick={addYesNoStatement}
+                          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-bold hover:bg-indigo-100"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          Thêm phát biểu
+                        </button>
+                      </div>
+
+                      <div className="space-y-2">
+
+                        {yesNoStatements.map((statement, index) => (
+
+                          <div
+                            key={index}
+                            className="grid grid-cols-[1fr_70px_70px_35px] gap-2 items-center p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                          >
+
+                            {/* STT + Nội dung */}
+                            <div className="flex items-center gap-2">
+
+                              <span className="w-7 h-7 shrink-0 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center text-[10px] font-black font-mono">
+                                {index + 1}
+                              </span>
+
+                              <input
+                                type="text"
+                                value={statement.text}
+                                onChange={(e) =>
+                                  updateYesNoStatement(
+                                    index,
+                                    "text",
+                                    e.target.value
+                                  )
+                                }
+                                placeholder={`Nhập phát biểu ${index + 1}...`}
+                                className="w-full px-2.5 py-2 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none focus:border-indigo-500"
+                              />
+
+                            </div>
+
+                            {/* ĐÚNG */}
+                            <label className="flex flex-col items-center justify-center gap-1 cursor-pointer">
+
+                              <input
+                                type="radio"
+                                name={`yes-no-${index}`}
+                                value="True"
+                                checked={statement.correct === "True"}
+                                onChange={() =>
+                                  updateYesNoStatement(
+                                    index,
+                                    "correct",
+                                    "True"
+                                  )
+                                }
+                                className="w-5 h-5 accent-emerald-600 cursor-pointer"
+                              />
+
+                              <span className="text-[9px] font-black text-emerald-700 uppercase">
+                                Đúng
+                              </span>
+
+                            </label>
+
+                            {/* SAI */}
+                            <label className="flex flex-col items-center justify-center gap-1 cursor-pointer">
+
+                              <input
+                                type="radio"
+                                name={`yes-no-${index}`}
+                                value="False"
+                                checked={statement.correct === "False"}
+                                onChange={() =>
+                                  updateYesNoStatement(
+                                    index,
+                                    "correct",
+                                    "False"
+                                  )
+                                }
+                                className="w-5 h-5 accent-rose-600 cursor-pointer"
+                              />
+
+                              <span className="text-[9px] font-black text-rose-700 uppercase">
+                                Sai
+                              </span>
+
+                            </label>
+
+                            {/* XÓA */}
+                            <button
+                              type="button"
+                              onClick={() => removeYesNoStatement(index)}
+                              disabled={yesNoStatements.length <= 2}
+                              className="p-1.5 text-slate-400 hover:text-rose-600 disabled:opacity-30 disabled:cursor-not-allowed"
+                              title="Xóa phát biểu"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+
+                          </div>
+
+                        ))}
+
+                      </div>
+
                     </div>
                   )}
 

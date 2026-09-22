@@ -31,7 +31,10 @@ import {
   CheckCheck,
   Edit3,
   Calendar,
-  RotateCcw
+  RotateCcw,
+  ArrowUp,
+  ArrowDown,
+  ListOrdered
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { User, SessionLog, ExamHistoryItem } from "../types";
@@ -137,6 +140,8 @@ export default function AdminDashboard({
   const [qSubsetId, setQSubsetId] = useState<"GM1" | "GM2" | "OT1" | "OT2" | "OT3" | "OT4" | "OT5">("GM1");
   const [qType, setQType] = useState<"multiple_choice" | "yes_no" | "matching">("multiple_choice");
   const [qText, setQText] = useState("");
+  const [qOrder, setQOrder] = useState<number | "">("");
+  const [orderInputMap, setOrderInputMap] = useState<Record<string, number | "">>({});
   // MC Subtype & Dynamic Options
   const [mcSubtype, setMcSubtype] = useState<"single" | "multiple">("single");
   const [mcOptions, setMcOptions] = useState<string[]>(["", "", "", ""]);
@@ -512,11 +517,13 @@ export default function AdminDashboard({
         correctAnswerText: correctAnswerNote.trim() || defaultAnswerText,
         correctKeys: finalCorrectKeys,
         pairs,
+        order: typeof qOrder === "number" ? qOrder : undefined,
         createdBy: currentUser.username
       });
 
       notify("Đã thêm câu hỏi mới vào ngân hàng đề thi thành công!");
       setQText("");
+      setQOrder("");
       setMcOptions(["", "", "", ""]);
       setMcCorrectKeys(["A"]);
       setCorrectAnswerNote("");
@@ -546,6 +553,55 @@ export default function AdminDashboard({
       onQuestionsUpdated?.();
     } catch (err: any) {
       alert(err.message || "Lỗi xóa câu hỏi.");
+    }
+  };
+
+  // Quick update question order
+  const handleUpdateQuestionOrder = async (question: any, newOrder: number) => {
+    const validOrder = Math.max(1, Math.round(newOrder) || 1);
+    try {
+      await apiService.updateQuestionOrder(question, validOrder);
+      notify(`Đã cập nhật STT câu hỏi thành: ${validOrder}`);
+      loadData();
+      onQuestionsUpdated?.();
+    } catch (err: any) {
+      alert("Lỗi cập nhật số thứ tự: " + (err?.message || err));
+    }
+  };
+
+  // Move question up or down within its current list
+  const handleMoveQuestionOrder = async (question: any, direction: "up" | "down", currentIdx: number, list: any[]) => {
+    const targetIdx = direction === "up" ? currentIdx - 1 : currentIdx + 1;
+    if (targetIdx < 0 || targetIdx >= list.length) return;
+
+    const targetQuestion = list[targetIdx];
+    // Hoán đổi nếu cùng level và subset
+    if (targetQuestion.levelId !== question.levelId || targetQuestion.subsetId !== question.subsetId) {
+      return;
+    }
+
+    const currentOrder = typeof question.order === "number" ? question.order : (currentIdx + 1);
+    const targetOrder = typeof targetQuestion.order === "number" ? targetQuestion.order : (targetIdx + 1);
+
+    let nextCurrentOrder = targetOrder;
+    let nextTargetOrder = currentOrder;
+
+    if (nextCurrentOrder === nextTargetOrder) {
+      if (direction === "up") {
+        nextCurrentOrder = Math.max(1, currentOrder - 1);
+      } else {
+        nextCurrentOrder = currentOrder + 1;
+      }
+    }
+
+    try {
+      await apiService.updateQuestionOrder(question, nextCurrentOrder);
+      await apiService.updateQuestionOrder(targetQuestion, nextTargetOrder);
+      notify(`Đã đổi vị trí câu hỏi thành công!`);
+      loadData();
+      onQuestionsUpdated?.();
+    } catch (err: any) {
+      alert("Lỗi đổi vị trí: " + (err?.message || err));
     }
   };
 
@@ -599,9 +655,10 @@ export default function AdminDashboard({
   });
 
   // Combined questions list (Base + Custom)
+  const customIds = new Set(customQuestions.map(q => q.id));
   const allMergedQuestions = [
     ...customQuestions.map(q => ({ ...q, isCustom: true })),
-    ...IC3_QUESTIONS.map(q => ({ ...q, isCustom: false }))
+    ...IC3_QUESTIONS.filter(q => !customIds.has(q.id)).map(q => ({ ...q, isCustom: false }))
   ];
 
   const filteredQuestions = allMergedQuestions.filter(q => {
@@ -621,6 +678,14 @@ export default function AdminDashboard({
       matchType = q.type === questionTypeFilter;
     }
     return matchSearch && matchLevel && matchSubset && matchType;
+  }).sort((a, b) => {
+    // Sắp xếp câu hỏi theo Level, Subset, và theo Order
+    if (a.levelId !== b.levelId) return a.levelId.localeCompare(b.levelId);
+    if (a.subsetId !== b.subsetId) return a.subsetId.localeCompare(b.subsetId);
+    const orderA = typeof a.order === "number" ? a.order : 999999;
+    const orderB = typeof b.order === "number" ? b.order : 999999;
+    if (orderA !== orderB) return orderA - orderB;
+    return a.text.localeCompare(b.text);
   });
 
   const formatDuration = (seconds?: number | null) => {
@@ -1334,8 +1399,8 @@ export default function AdminDashboard({
 
                 <form onSubmit={handleAddQuestion} className="space-y-3.5 text-xs">
                   
-                  {/* Select Level & Subset */}
-                  <div className="grid grid-cols-2 gap-3">
+                  {/* Select Level & Subset & Order */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div className="space-y-1">
                       <label className="block text-[10px] font-extrabold uppercase font-mono text-slate-500">
                         Cấp độ IC3
@@ -1368,6 +1433,20 @@ export default function AdminDashboard({
                         <option value="OT4">Đề OT4</option>
                         <option value="OT5">Đề OT5</option>
                       </select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="block text-[10px] font-extrabold uppercase font-mono text-slate-500">
+                        Số thứ tự (STT)
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        placeholder="Tùy chọn (VD: 1, 2...)"
+                        value={qOrder}
+                        onChange={(e) => setQOrder(e.target.value === "" ? "" : parseInt(e.target.value, 10))}
+                        className="w-full py-2 px-2.5 bg-slate-50 border border-slate-200 rounded-lg font-semibold text-slate-800 focus:outline-none focus:border-indigo-500"
+                      />
                     </div>
                   </div>
 
@@ -1779,9 +1858,57 @@ export default function AdminDashboard({
                       >
                         <div className="flex items-start justify-between gap-2 mb-2">
                           <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="text-[10px] font-mono font-bold bg-white border border-slate-200 px-2 py-0.5 rounded text-slate-700">
-                              Câu {idx + 1}
-                            </span>
+                            {/* Số thứ tự câu hỏi và công cụ đổi STT nhanh */}
+                            <div className="flex items-center gap-1 bg-white border border-slate-300 rounded-lg px-2 py-0.5 shadow-xs">
+                              <ListOrdered className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                              <span className="text-[10px] font-mono font-bold text-slate-700">STT:</span>
+                              <input
+                                type="number"
+                                min="1"
+                                value={orderInputMap[q.id] !== undefined ? orderInputMap[q.id] : (q.order ?? (idx + 1))}
+                                onChange={(e) => {
+                                  const val = e.target.value === "" ? "" : parseInt(e.target.value, 10);
+                                  setOrderInputMap((prev) => ({ ...prev, [q.id]: val }));
+                                }}
+                                onBlur={(e) => {
+                                  const val = parseInt(e.target.value, 10);
+                                  if (!isNaN(val) && val > 0 && val !== q.order) {
+                                    handleUpdateQuestionOrder(q, val);
+                                  }
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") {
+                                    const val = parseInt((e.target as HTMLInputElement).value, 10);
+                                    if (!isNaN(val) && val > 0 && val !== q.order) {
+                                      handleUpdateQuestionOrder(q, val);
+                                    }
+                                  }
+                                }}
+                                title="Nhập số thứ tự và bấm Enter hoặc click ra ngoài để lưu"
+                                className="w-11 text-center text-xs font-mono font-black text-indigo-700 bg-indigo-50/50 border border-indigo-200 rounded px-1 py-0.5 focus:bg-white focus:outline-none focus:border-indigo-500"
+                              />
+                              <div className="flex items-center gap-0.5 ml-0.5">
+                                <button
+                                  type="button"
+                                  disabled={idx === 0}
+                                  onClick={() => handleMoveQuestionOrder(q, "up", idx, filteredQuestions)}
+                                  className="p-0.5 text-slate-400 hover:text-indigo-600 disabled:opacity-25 disabled:hover:text-slate-400 transition cursor-pointer"
+                                  title="Đẩy lên trước"
+                                >
+                                  <ArrowUp className="w-3 h-3" />
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={idx === filteredQuestions.length - 1}
+                                  onClick={() => handleMoveQuestionOrder(q, "down", idx, filteredQuestions)}
+                                  className="p-0.5 text-slate-400 hover:text-indigo-600 disabled:opacity-25 disabled:hover:text-slate-400 transition cursor-pointer"
+                                  title="Hạ xuống sau"
+                                >
+                                  <ArrowDown className="w-3 h-3" />
+                                </button>
+                              </div>
+                            </div>
+
                             <span className="text-[10px] font-mono font-bold uppercase bg-indigo-50 border border-indigo-200 text-indigo-700 px-2 py-0.5 rounded">
                               {q.levelId} • {q.subsetId}
                             </span>

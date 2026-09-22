@@ -55,6 +55,8 @@ export interface DBCustomQuestion {
   correctAnswerText: string;
   correctKeys?: string[];
   pairs?: { left: string; right: string }[];
+  explanation?: string;
+  order?: number;
   createdAt: string;
   createdBy?: string;
 }
@@ -418,6 +420,15 @@ class DBManager {
     this.data.customQuestions.push(newQuestion);
     this.saveToDisk();
     return newQuestion;
+  }
+
+  public updateCustomQuestion(id: string, updates: Partial<DBCustomQuestion>): DBCustomQuestion | null {
+    const target = this.data.customQuestions.find(q => q.id === id);
+    if (!target) return null;
+
+    Object.assign(target, updates);
+    this.saveToDisk();
+    return target;
   }
 
   public deleteCustomQuestion(id: string): boolean {

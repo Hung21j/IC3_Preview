@@ -586,6 +586,8 @@ app.post("/api/admin/questions", (req, res) => {
       correctAnswerText,
       correctKeys,
       pairs,
+      explanation,
+      order,
       createdBy
     } = req.body;
 
@@ -602,12 +604,47 @@ app.post("/api/admin/questions", (req, res) => {
       correctAnswerText: correctAnswerText || (options ? options[0] : "Đáp án đúng"),
       correctKeys: correctKeys || ["A"],
       pairs: pairs || undefined,
+      explanation: explanation || "",
+      order: typeof order === "number" ? order : undefined,
       createdBy: createdBy || "admin"
     });
 
     return res.json({ success: true, question: newQ });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err.message || "Lỗi lưu câu hỏi." });
+  }
+});
+
+// Admin updates a question
+app.put("/api/admin/questions/:id", (req, res) => {
+  try {
+    const { id } = req.params;
+    const updates = req.body;
+    const updated = db.updateCustomQuestion(id, updates);
+    if (!updated) {
+      return res.status(404).json({ success: false, error: "Không tìm thấy câu hỏi." });
+    }
+    return res.json({ success: true, question: updated });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message || "Lỗi cập nhật câu hỏi." });
+  }
+});
+
+// Admin updates question order
+app.patch("/api/admin/questions/:id/order", (req, res) => {
+  try {
+    const { id } = req.params;
+    const { order } = req.body;
+    if (typeof order !== "number") {
+      return res.status(400).json({ success: false, error: "Số thứ tự không hợp lệ." });
+    }
+    const updated = db.updateCustomQuestion(id, { order });
+    if (!updated) {
+      return res.status(404).json({ success: false, error: "Không tìm thấy câu hỏi." });
+    }
+    return res.json({ success: true, question: updated });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message || "Lỗi cập nhật thứ tự câu hỏi." });
   }
 });
 

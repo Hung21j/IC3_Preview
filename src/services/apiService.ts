@@ -781,6 +781,8 @@ export const apiService = {
     correctAnswerText?: string;
     correctKeys?: string[];
     pairs?: { left: string; right: string }[];
+    explanation?: string;
+    order?: number;
     createdBy?: string;
   }): Promise<IC3Question> {
     const newQ: IC3Question = {
@@ -792,7 +794,9 @@ export const apiService = {
       ...(q.options && q.options.length > 0 ? { options: q.options } : {}),
       ...(q.correctAnswerText ? { correctAnswerText: q.correctAnswerText } : {}),
       ...(q.correctKeys && q.correctKeys.length > 0 ? { correctKeys: q.correctKeys } : {}),
-      ...(q.pairs && q.pairs.length > 0 ? { pairs: q.pairs } : {})
+      ...(q.pairs && q.pairs.length > 0 ? { pairs: q.pairs } : {}),
+      ...(q.explanation ? { explanation: q.explanation } : {}),
+      ...(typeof q.order === "number" ? { order: q.order } : {})
     };
 
     // 1. Save directly to Cloud Firestore so all computers see it immediately
@@ -830,11 +834,12 @@ export const apiService = {
       subsetId: q.subsetId || existing?.subsetId || "GM1",
       type: q.type || existing?.type || "multiple_choice",
       text: (q.text !== undefined ? q.text : existing?.text || "").trim(),
-      ...(q.options && q.options.length > 0 ? { options: q.options } : {}),
+      ...(q.options && q.options.length > 0 ? { options: q.options } : existing?.options ? { options: existing.options } : {}),
       ...(q.correctAnswerText !== undefined ? { correctAnswerText: q.correctAnswerText } : existing?.correctAnswerText ? { correctAnswerText: existing.correctAnswerText } : {}),
-      ...(q.correctKeys && q.correctKeys.length > 0 ? { correctKeys: q.correctKeys } : {}),
-      ...(q.pairs && q.pairs.length > 0 ? { pairs: q.pairs } : {}),
-      ...(q.explanation !== undefined ? { explanation: q.explanation } : existing?.explanation ? { explanation: existing.explanation } : {})
+      ...(q.correctKeys && q.correctKeys.length > 0 ? { correctKeys: q.correctKeys } : existing?.correctKeys ? { correctKeys: existing.correctKeys } : {}),
+      ...(q.pairs && q.pairs.length > 0 ? { pairs: q.pairs } : existing?.pairs ? { pairs: existing.pairs } : {}),
+      ...(q.explanation !== undefined ? { explanation: q.explanation } : existing?.explanation ? { explanation: existing.explanation } : {}),
+      ...(q.order !== undefined ? { order: q.order } : existing?.order !== undefined ? { order: existing.order } : {})
     };
 
     // 1. Update in Cloud Firestore
@@ -858,6 +863,41 @@ export const apiService = {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(updatedQ)
+    }).catch(() => {});
+
+    return updatedQ;
+  },
+
+  // Admin: Update Question Order directly
+  async updateQuestionOrder(question: IC3Question, newOrder: number): Promise<IC3Question> {
+    const questions = getLocalCustomQuestions();
+    const existingIndex = questions.findIndex((item) => item.id === question.id);
+
+    const updatedQ: IC3Question = {
+      ...question,
+      order: newOrder
+    };
+
+    // 1. Save to Cloud Firestore
+    try {
+      await firestoreService.saveCloudQuestion(updatedQ);
+    } catch (e) {
+      console.warn("Cloud save question order fallback:", e);
+    }
+
+    // 2. Save locally
+    if (existingIndex >= 0) {
+      questions[existingIndex] = updatedQ;
+    } else {
+      questions.push(updatedQ);
+    }
+    saveLocalCustomQuestions(questions);
+
+    // 3. Backend endpoint sync
+    safeFetchJson(`/api/admin/questions/${question.id}/order`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ order: newOrder })
     }).catch(() => {});
 
     return updatedQ;

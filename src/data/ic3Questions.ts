@@ -26,6 +26,8 @@ export interface IC3Question {
   correctKeys?: string[]; // Phím đáp án đúng (ví dụ: ["B"] cho trắc nghiệm, ["True"] hoặc ["False"] cho Đúng/Sai)
   pairs?: { left: string; right: string }[]; // Cấu trúc ghép nối nếu có
   explanation?: string; // Lời giải thích / chú giải
+  order?: number; // Thứ tự câu hỏi do Admin thiết lập
+  isCustom?: boolean; // Đánh dấu câu hỏi tự tạo
 }
 
 /**

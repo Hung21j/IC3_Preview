@@ -17,7 +17,6 @@ import {
 import { motion, AnimatePresence } from "motion/react";
 import { apiService } from "../services/apiService";
 import { User } from "../types";
-import LogoTHDD from "./LogoTHDD";
 
 interface AuthPageProps {
   onAuthSuccess: (user: User) => void;
@@ -149,8 +148,8 @@ export default function AuthPage({ onAuthSuccess }: AuthPageProps) {
         >
           {/* Top Decorative Header */}
           <div className="bg-gradient-to-r from-indigo-850 via-indigo-750 to-blue-750 p-6 text-black text-center relative">
-            <div className="w-16 h-16 rounded-2xl bg-white p-1.5 flex items-center justify-center mx-auto mb-3 border border-slate-200 shadow-md">
-              <LogoTHDD size={56} className="w-full h-full object-contain" />
+            <div className="w-14 h-14 rounded-2xl bg-white/15 backdrop-blur-md flex items-center justify-center mx-auto mb-3 border border-gray-900/20 shadow-inner">
+              <GraduationCap className="w-8 h-8 text-green" />
             </div>
             <h1 className="text-xl md:text-2xl font-black uppercase tracking-tight font-mono">
               HỆ THỐNG ÔN THI IC3
@@ -448,6 +447,7 @@ export default function AuthPage({ onAuthSuccess }: AuthPageProps) {
                       </>
                     )}
                   </button>
+
                 </motion.form>
               )}
             </AnimatePresence>

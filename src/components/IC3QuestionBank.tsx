@@ -239,8 +239,79 @@ export default function IC3QuestionBank({
     return questionsList.filter((q) => q.subsetId === subsetId);
   };
 
+  // Utility to shuffle an array (Fisher-Yates)
+  const shuffleArray = <T,>(array: T[]): T[] => {
+    const result = [...array];
+    for (let i = result.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [result[i], result[j]] = [result[j], result[i]];
+    }
+    return result;
+  };
+
+  // Utility to shuffle answer choices within an individual question
+  const shuffleQuestionOptions = (question: IC3Question): IC3Question => {
+    if (question.type === "multiple_choice" && question.options && question.options.length > 1) {
+      const origOptions = question.options;
+      const origCorrectKeys = question.correctKeys || [];
+
+      // Map each option with its correctness state and cleaned text
+      const parsed = origOptions.map((optStr, idx) => {
+        const origLetter = String.fromCharCode(65 + idx); // 'A', 'B', 'C', 'D'...
+        const isCorrect = origCorrectKeys.includes(origLetter) ||
+          origCorrectKeys.some((k) => optStr.trim().startsWith(`${k}.`) || optStr.trim().startsWith(`${k} `) || optStr.trim() === k);
+        const cleanText = optStr.replace(/^[A-J][\.\:\)]\s*/i, "").trim();
+        return {
+          cleanText,
+          isCorrect
+        };
+      });
+
+      // Shuffle the options array
+      const shuffled = shuffleArray(parsed);
+
+      // Reassign new letters (A, B, C, D...) and compute new correct keys
+      const newOptions: string[] = [];
+      const newCorrectKeys: string[] = [];
+      const correctItems: string[] = [];
+
+      shuffled.forEach((item, newIdx) => {
+        const newLetter = String.fromCharCode(65 + newIdx);
+        newOptions.push(`${newLetter}. ${item.cleanText}`);
+        if (item.isCorrect) {
+          newCorrectKeys.push(newLetter);
+          correctItems.push(`${newLetter}. ${item.cleanText}`);
+        }
+      });
+
+      const finalCorrectKeys = newCorrectKeys.length > 0 ? newCorrectKeys : origCorrectKeys;
+      const finalAnswerText = correctItems.length > 0 ? correctItems.join(" | ") : question.correctAnswerText;
+
+      return {
+        ...question,
+        options: newOptions,
+        correctKeys: finalCorrectKeys,
+        correctAnswerText: finalAnswerText
+      };
+    }
+
+    if (question.type === "matching" && question.pairs && question.pairs.length > 1) {
+      return {
+        ...question,
+        pairs: shuffleArray(question.pairs)
+      };
+    }
+
+    return { ...question };
+  };
+
+  // Prepared session questions (ordered for training, shuffled for testing; choices shuffled for both)
+  const [sessionQuestions, setSessionQuestions] = useState<IC3Question[]>([]);
+
   // Active subset of questions being presented
-  const activeQuestions = selectedSubSet ? getSubsetQuestions(selectedSubSet, levelQuestions) : [];
+  const activeQuestions = (appMode !== "menu" && sessionQuestions.length > 0)
+    ? sessionQuestions
+    : (selectedSubSet ? getSubsetQuestions(selectedSubSet, levelQuestions) : []);
 
   // Question navigation pointers
   const [currentIndex, setCurrentIndex] = useState(0);

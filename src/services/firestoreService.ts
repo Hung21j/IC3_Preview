@@ -213,6 +213,18 @@ export const firestoreService = {
     await setDoc(docRef, cleanPayload);
   },
 
+  async updateCloudQuestionOrder(questionId: string, order: number): Promise<void> {
+    try {
+      const docRef = doc(db, QUESTIONS_COLLECTION, questionId);
+      await updateDoc(docRef, {
+        order,
+        updatedAt: new Date().toISOString()
+      });
+    } catch (err) {
+      console.warn("Firestore updateCloudQuestionOrder error:", err);
+    }
+  },
+
   async deleteCloudQuestion(questionId: string): Promise<void> {
     const docRef = doc(db, QUESTIONS_COLLECTION, questionId);
     await deleteDoc(docRef);

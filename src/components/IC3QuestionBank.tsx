@@ -1355,7 +1355,7 @@ export default function IC3QuestionBank({
                         </div>
                       )}
 
-                      {/* True/False Yes/No */}
+                      {/* True/False Yes/No 
                       {q.type === "yes_no" && (
                         <div className="space-y-2.5 pt-1">
                           <span className="text-xs font-black uppercase text-slate-800 flex items-center gap-1.5 font-mono tracking-wider">
@@ -1403,6 +1403,31 @@ export default function IC3QuestionBank({
                             })}
                           </div>
                         </div>
+                      )} */}
+                      {q.type === "yes_no" && (
+                        <input
+                          type="radio"
+                          name={`question-${q.id}-${index}`}
+                          value="True"
+                          checked={selectedValue === "True"}
+                          onChange={() =>
+                            handleSelectStatementAnswer(q, index, "True")
+                          }
+                          disabled={appMode === "training" && isChecked}
+                          className="w-5 h-5 accent-emerald-600 cursor-pointer"
+                        />
+
+                        <input
+                          type="radio"
+                          name={`question-${q.id}-${index}`}
+                          value="False"
+                          checked={selectedValue === "False"}
+                          onChange={() =>
+                            handleSelectStatementAnswer(q, index, "False")
+                          }
+                          disabled={appMode === "training" && isChecked}
+                          className="w-5 h-5 accent-rose-600 cursor-pointer"
+                        />
                       )}
 
                       {/* Matching (Ghép nối / Kéo thả) Question Interface */}

@@ -22,6 +22,12 @@ export interface IC3Question {
   type: QuestionType; // "multiple_choice" hoặc "yes_no" hoặc "matching"
   text: string;
   options?: string[]; // Danh sách đáp án lựa chọn (cho dạng multiple_choice)
+
+    // Dạng Đúng / Sai nhiều phát biểu
+  statements?: {
+    text: string;
+    correct: "True" | "False";
+  }[];
   correctAnswerText?: string; // Hiển thị lời giải / đáp án đúng (tùy chọn)
   correctKeys?: string[]; // Phím đáp án đúng (ví dụ: ["B"] cho trắc nghiệm, ["True"] hoặc ["False"] cho Đúng/Sai)
   pairs?: { left: string; right: string }[]; // Cấu trúc ghép nối nếu có

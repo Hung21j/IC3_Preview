@@ -798,6 +798,7 @@ export const apiService = {
       ...(q.options && q.options.length > 0 ? { options: q.options } : {}),
       ...(q.correctAnswerText ? { correctAnswerText: q.correctAnswerText } : {}),
       ...(q.correctKeys && q.correctKeys.length > 0 ? { correctKeys: q.correctKeys } : {}),
+      ...(q.statements && q.statements.length > 0 ? { statements: q.statements } : {}),
       ...(q.pairs && q.pairs.length > 0 ? { pairs: q.pairs } : {}),
       ...(q.explanation ? { explanation: q.explanation } : {}),
       ...(typeof q.order === "number" ? { order: q.order } : {})
@@ -841,7 +842,7 @@ export const apiService = {
       ...(q.options && q.options.length > 0 ? { options: q.options } : existing?.options ? { options: existing.options } : {}),
       ...(q.correctAnswerText !== undefined ? { correctAnswerText: q.correctAnswerText } : existing?.correctAnswerText ? { correctAnswerText: existing.correctAnswerText } : {}),
       ...(q.correctKeys && q.correctKeys.length > 0 ? { correctKeys: q.correctKeys } : existing?.correctKeys ? { correctKeys: existing.correctKeys } : {}),
-      ...(q.statements && q.statements.length > 0 ? { statements: q.statements } : {}),
+      ...(q.statements && q.statements.length > 0 ? { statements: q.statements } : existing?.statements ? { statements: existing.statements } : {}),
       ...(q.pairs && q.pairs.length > 0 ? { pairs: q.pairs } : existing?.pairs ? { pairs: existing.pairs } : {}),
       ...(q.explanation !== undefined ? { explanation: q.explanation } : existing?.explanation ? { explanation: existing.explanation } : {}),
       ...(q.order !== undefined ? { order: q.order } : existing?.order !== undefined ? { order: existing.order } : {})

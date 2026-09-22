@@ -146,7 +146,7 @@ export default function AdminDashboard({
   const [mcSubtype, setMcSubtype] = useState<"single" | "multiple">("single");
   const [mcOptions, setMcOptions] = useState<string[]>(["", "", "", ""]);
   const [mcCorrectKeys, setMcCorrectKeys] = useState<string[]>(["A"]);
-  const [correctKey, setCorrectKey] = useState("True"); // for Yes/No
+  //const [correctKey, setCorrectKey] = useState("True"); // for Yes/No
   const [yesNoStatements, setYesNoStatements] = useState<
     { text: string; correct: "True" | "False" }[]
   >([

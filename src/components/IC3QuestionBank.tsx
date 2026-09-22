@@ -186,9 +186,50 @@ export default function IC3QuestionBank({
       if (userSelected.length !== targetSelected.length) return false;
       return userSelected.every((k, i) => k === targetSelected[i]);
     }
+
+    if (question.type === "yes_no" && question.statements?.length) {
+    try {
+      const parsed = JSON.parse(ans) as Record<string, string>;
+  
+      return question.statements.every(
+        (statement, index) =>
+          parsed[String(index)] === statement.correct
+      );
+    } catch {
+      return false;
+    }
+  }
     return question.correctKeys?.includes(ans) || false;
   };
 
+  const handleSelectStatementAnswer = (
+    question: IC3Question,
+    statementIndex: number,
+    value: "True" | "False"
+  ) => {
+    if (appMode === "training" && checkedQuestions[question.id]) {
+      return;
+    }
+  
+    setSelectedAnswers((prev) => {
+      let current: Record<string, string> = {};
+  
+      try {
+        if (prev[question.id]) {
+          current = JSON.parse(prev[question.id]);
+        }
+      } catch {
+        current = {};
+      }
+  
+      current[String(statementIndex)] = value;
+  
+      return {
+        ...prev,
+        [question.id]: JSON.stringify(current)
+      };
+    });
+  };
 
 
   const isManageMode = false;

@@ -23,7 +23,14 @@ export const EditQuestionModal: React.FC<EditQuestionModalProps> = ({
   const [qText, setQText] = useState("");
   const [mcOptions, setMcOptions] = useState<string[]>(["", "", "", ""]);
   const [mcCorrectKeys, setMcCorrectKeys] = useState<string[]>(["A"]);
-  const [yesNoCorrect, setYesNoCorrect] = useState<"True" | "False">("True");
+  // const [yesNoCorrect, setYesNoCorrect] = useState<"True" | "False">("True");
+  const [yesNoStatements, setYesNoStatements] = useState<
+    { text: string; correct: "True" | "False" }[]
+  >([
+    { text: "", correct: "True" },
+    { text: "", correct: "False" },
+    { text: "", correct: "True" }
+  ]);
   const [matchingPairs, setMatchingPairs] = useState<{ left: string; right: string }[]>([
     { left: "", right: "" },
     { left: "", right: "" },
@@ -54,7 +61,29 @@ export const EditQuestionModal: React.FC<EditQuestionModalProps> = ({
         }
         setMcCorrectKeys(question.correctKeys || ["A"]);
       } else if (question.type === "yes_no") {
-        setYesNoCorrect(question.correctKeys?.[0] === "False" ? "False" : "True");
+          if (question.statements?.length) {
+      
+          setYesNoStatements(
+            question.statements.map((s) => ({
+              text: s.text,
+              correct: s.correct
+            }))
+          );
+      
+        } else {
+      
+          // Tương thích câu Đúng/Sai cũ
+          setYesNoStatements([
+            {
+              text: question.text || "",
+              correct:
+                question.correctKeys?.[0] === "False"
+                  ? "False"
+                  : "True"
+            }
+          ]);
+      
+        }
       } else if (question.type === "matching") {
         if (question.pairs && question.pairs.length > 0) {
           setMatchingPairs(question.pairs.map((p) => ({ left: p.left, right: p.right })));
@@ -134,10 +163,31 @@ export const EditQuestionModal: React.FC<EditQuestionModalProps> = ({
           .join(" | ");
       }
     } else if (qType === "yes_no") {
-      finalCorrectKeys = [yesNoCorrect];
-      if (!finalAnswerText) {
-        finalAnswerText = yesNoCorrect === "True" ? "Đúng (True)" : "Sai (False)";
-      }
+        const validStatements = yesNoStatements
+          .map((s) => ({
+            text: s.text.trim(),
+            correct: s.correct
+          }))
+          .filter((s) => s.text);
+      
+        if (validStatements.length < 2) {
+          setError("Vui lòng nhập ít nhất 2 phát biểu.");
+          return;
+        }
+      
+        finalCorrectKeys = undefined;
+        finalStatements = validStatements;
+      
+        if (!finalAnswerText) {
+          finalAnswerText = validStatements
+            .map(
+              (s, index) =>
+                `${index + 1}. ${
+                  s.correct === "True" ? "Đúng" : "Sai"
+                }`
+            )
+            .join("\n");
+        }
     } else if (qType === "matching") {
       const validPairs = matchingPairs
         .map((p) => ({ left: p.left.trim(), right: p.right.trim() }))
@@ -162,6 +212,7 @@ export const EditQuestionModal: React.FC<EditQuestionModalProps> = ({
         text: trimmedText,
         options: formattedOptions,
         correctKeys: finalCorrectKeys,
+        statements: finalStaments,
         pairs: finalPairs,
         correctAnswerText: finalAnswerText,
         order: typeof qOrder === "number" ? qOrder : undefined

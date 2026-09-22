@@ -780,6 +780,10 @@ export const apiService = {
     options?: string[];
     correctAnswerText?: string;
     correctKeys?: string[];
+    statements?: {
+      text: string;
+      correct: "True" | "False";
+    }[];
     pairs?: { left: string; right: string }[];
     explanation?: string;
     order?: number;
@@ -837,6 +841,7 @@ export const apiService = {
       ...(q.options && q.options.length > 0 ? { options: q.options } : existing?.options ? { options: existing.options } : {}),
       ...(q.correctAnswerText !== undefined ? { correctAnswerText: q.correctAnswerText } : existing?.correctAnswerText ? { correctAnswerText: existing.correctAnswerText } : {}),
       ...(q.correctKeys && q.correctKeys.length > 0 ? { correctKeys: q.correctKeys } : existing?.correctKeys ? { correctKeys: existing.correctKeys } : {}),
+      ...(q.statements && q.statements.length > 0 ? { statements: q.statements } : {}),
       ...(q.pairs && q.pairs.length > 0 ? { pairs: q.pairs } : existing?.pairs ? { pairs: existing.pairs } : {}),
       ...(q.explanation !== undefined ? { explanation: q.explanation } : existing?.explanation ? { explanation: existing.explanation } : {}),
       ...(q.order !== undefined ? { order: q.order } : existing?.order !== undefined ? { order: existing.order } : {})

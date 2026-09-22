@@ -343,7 +343,7 @@ export const EditQuestionModal: React.FC<EditQuestionModalProps> = ({
               </div>
             )}
 
-            {qType === "yes_no" && (
+            {/* {qType === "yes_no" && (
               <div className="p-4 bg-slate-50/70 dark:bg-slate-850/40 border border-slate-200/80 dark:border-slate-800 rounded-xl space-y-2">
                 <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
                   Đáp án chuẩn cho câu Đúng/Sai:
@@ -370,6 +370,141 @@ export const EditQuestionModal: React.FC<EditQuestionModalProps> = ({
                     <span>Sai (False / No)</span>
                   </label>
                 </div>
+              </div>
+            )}*/}
+
+            {q.type === "yes_no" && q.statements && (
+              <div className="space-y-3 pt-1">
+            
+                <div className="flex items-center gap-1.5">
+                  <Compass className="w-4 h-4 text-slate-600" />
+            
+                  <span className="text-xs font-black uppercase text-slate-800 font-mono tracking-wider">
+                    Hãy xác định các phát biểu sau là Đúng hay Sai:
+                  </span>
+                </div>
+            
+                <div className="overflow-hidden rounded-xl border-2 border-slate-300">
+            
+                  {/* HEADER */}
+                  <div className="grid grid-cols-[1fr_90px_90px] bg-slate-100 border-b-2 border-slate-300">
+            
+                    <div className="p-3 font-black text-xs uppercase font-mono text-slate-800">
+                      Các phát biểu
+                    </div>
+            
+                    <div className="p-3 text-center font-black text-xs uppercase font-mono text-emerald-700 border-l border-slate-300">
+                      Đúng
+                    </div>
+            
+                    <div className="p-3 text-center font-black text-xs uppercase font-mono text-rose-700 border-l border-slate-300">
+                      Sai
+                    </div>
+            
+                  </div>
+            
+                  {/* STATEMENTS */}
+                  {q.statements.map((statement, index) => {
+            
+                    let parsedAnswer: Record<string, string> = {};
+            
+                    try {
+                      parsedAnswer = JSON.parse(userAns || "{}");
+                    } catch {
+                      parsedAnswer = {};
+                    }
+            
+                    const selectedValue = parsedAnswer[String(index)];
+            
+                    const isTrueSelected = selectedValue === "True";
+                    const isFalseSelected = selectedValue === "False";
+            
+                    const isCorrectAnswer =
+                      statement.correct === selectedValue;
+            
+                    return (
+                      <div
+                        key={index}
+                        className={`grid grid-cols-[1fr_90px_90px] border-b border-slate-200 last:border-b-0 transition ${
+                          appMode === "training" && isChecked
+                            ? isCorrectAnswer
+                              ? "bg-emerald-50"
+                              : "bg-rose-50"
+                            : "bg-white"
+                        }`}
+                      >
+            
+                        {/* STATEMENT */}
+                        <div className="p-4 flex items-center">
+            
+                          <span className="mr-3 w-7 h-7 rounded-lg bg-slate-100 border border-slate-300 flex items-center justify-center text-xs font-black font-mono shrink-0">
+                            {index + 1}
+                          </span>
+            
+                          <span className="text-sm font-semibold leading-relaxed text-slate-900">
+                            {statement.text}
+                          </span>
+            
+                        </div>
+            
+                        {/* TRUE */}
+                        <div className="border-l border-slate-200 flex items-center justify-center p-3">
+            
+                          <button
+                            type="button"
+                            disabled={appMode === "training" && isChecked}
+                            onClick={() =>
+                              handleSelectStatementAnswer(q, index, "True")
+                            }
+                            className={`w-8 h-8 rounded-md border-2 flex items-center justify-center transition ${
+                              isTrueSelected
+                                ? "bg-emerald-600 border-emerald-600 text-white"
+                                : "bg-white border-slate-400 hover:border-emerald-500"
+                            } ${
+                              appMode === "training" && isChecked
+                                ? "cursor-not-allowed"
+                                : "cursor-pointer"
+                            }`}
+                          >
+                            {isTrueSelected && (
+                              <Check className="w-5 h-5" />
+                            )}
+                          </button>
+            
+                        </div>
+            
+                        {/* FALSE */}
+                        <div className="border-l border-slate-200 flex items-center justify-center p-3">
+            
+                          <button
+                            type="button"
+                            disabled={appMode === "training" && isChecked}
+                            onClick={() =>
+                              handleSelectStatementAnswer(q, index, "False")
+                            }
+                            className={`w-8 h-8 rounded-md border-2 flex items-center justify-center transition ${
+                              isFalseSelected
+                                ? "bg-rose-600 border-rose-600 text-white"
+                                : "bg-white border-slate-400 hover:border-rose-500"
+                            } ${
+                              appMode === "training" && isChecked
+                                ? "cursor-not-allowed"
+                                : "cursor-pointer"
+                            }`}
+                          >
+                            {isFalseSelected && (
+                              <Check className="w-5 h-5" />
+                            )}
+                          </button>
+            
+                        </div>
+            
+                      </div>
+                    );
+                  })}
+            
+                </div>
+            
               </div>
             )}
 

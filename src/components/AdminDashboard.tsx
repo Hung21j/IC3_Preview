@@ -521,7 +521,7 @@ export default function AdminDashboard({
     }
 
     let options: string[] | undefined = undefined;
-    let finalCorrectKeys: string[] | undefined = [correctKey];
+    let finalCorrectKeys: string[] | undefined = undefined;
     let pairs: { left: string; right: string }[] | undefined = undefined;
 
     let statements:

@@ -77,6 +77,9 @@ export interface User {
   lastLogin?: string;
   lastLogout?: string | null;
   isOnline?: boolean;
+
+  // Dùng để admin ép đăng xuất tài khoản từ xa
+  sessionVersion?: number;
 }
 
 export interface SessionLog {

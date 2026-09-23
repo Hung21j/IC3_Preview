@@ -29,6 +29,7 @@ import { apiService } from "./services/apiService";
 import { motion, AnimatePresence } from "motion/react";
 import { ShieldCheck, LogOut, KeyRound } from "lucide-react";
 import { ChangePasswordModal } from "./components/ChangePasswordModal";
+import { firestoreService } from "./services/firestoreService";
 
 // Academic/solving status indicators during analysis
 const STATUS_INDICATORS = [
@@ -210,6 +211,47 @@ export default function App() {
     }
     return () => clearInterval(interval);
   }, [isLoading]);
+
+  useEffect(() => {
+    if (!currentUser) return;
+  
+    const checkRemoteLogout = async () => {
+      try {
+        const users = await firestoreService.getCloudUsers();
+  
+        const cloudUser = users.find(
+          (item) => item.user.id === currentUser.id
+        );
+  
+        if (!cloudUser) {
+          await apiService.logout();
+          setCurrentUser(null);
+          setCurrentView("student");
+          return;
+        }
+  
+        const localVersion = currentUser.sessionVersion || 0;
+        const cloudVersion = cloudUser.user.sessionVersion || 0;
+  
+        if (cloudVersion > localVersion) {
+          await apiService.logout();
+  
+          setCurrentUser(null);
+          setCurrentView("student");
+  
+          alert(
+            "Tài khoản của bạn đã được quản trị viên đăng xuất."
+          );
+        }
+      } catch (err) {
+        console.warn("Remote logout check failed:", err);
+      }
+    };
+  
+    const interval = setInterval(checkRemoteLogout, 3000);
+  
+    return () => clearInterval(interval);
+  }, [currentUser]);
 
   // Request analysis & solutions from full-stack backend
   const handleSolve = async (payload: {

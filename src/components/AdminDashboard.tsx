@@ -1562,7 +1562,7 @@ export default function AdminDashboard({
                         type="button"
                         onClick={() => {
                           setQType("yes_no");
-                          setCorrectKey("True");
+                          //setCorrectKey("True");
                         }}
                         className={`py-2 px-2 rounded-lg border text-center font-bold text-xs transition ${
                           qType === "yes_no"

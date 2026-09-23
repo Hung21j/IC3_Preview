@@ -386,6 +386,36 @@ export default function AdminDashboard({
     }
   };
 
+  const handleForceLogout = async (user: User) => {
+    if (user.id === currentUser.id) {
+      alert("Bạn đang đăng nhập bằng tài khoản này.");
+      return;
+    }
+  
+    if (!user.isOnline) {
+      alert(`Tài khoản "${user.name}" hiện không online.`);
+      return;
+    }
+  
+    const ok = window.confirm(
+      `Bạn có chắc muốn đăng xuất tài khoản "${user.name}" (@${user.username}) khỏi tất cả thiết bị?`
+    );
+  
+    if (!ok) return;
+  
+    try {
+      await apiService.forceLogoutUser(user.id);
+  
+      notify(
+        `Đã đăng xuất tài khoản "${user.name}" khỏi hệ thống.`
+      );
+  
+      loadData();
+    } catch (err: any) {
+      alert(err.message || "Không thể đăng xuất tài khoản.");
+    }
+  };
+
   // Bulk Input Parsing
   const handleBulkTextChange = (text: string, defClass = bulkDefaultClass, defSchool = bulkDefaultSchool) => {
     setBulkRawText(text);
@@ -1150,6 +1180,7 @@ export default function AdminDashboard({
                           </td>
                           <td className="py-3 px-3 text-right">
                             <div className="flex items-center justify-end gap-1">
+                              {/* Đổi mật khẩu */}
                               <button
                                 type="button"
                                 onClick={() => {
@@ -1162,6 +1193,19 @@ export default function AdminDashboard({
                                 <KeyRound className="w-4 h-4" />
                               </button>
 
+                               {/* Đăng xuất */}
+                              {u.id !== currentUser.id && u.isOnline && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleForceLogout(u)}
+                                  className="p-1.5 text-slate-500 hover:text-orange-600 hover:bg-orange-50 rounded-lg transition active:scale-95"
+                                  title="Đăng xuất tài khoản này"
+                                >
+                                  <LogOut className="w-4 h-4" />
+                                </button>
+                              )}
+                              
+                              {/* Xóa */}
                               {u.username !== "admin" ? (
                                 <button
                                   type="button"

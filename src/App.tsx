@@ -118,7 +118,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
 
   // Authentication & View Management
-  const [currentUser, setCurrentUser] = useState<User | null>((null);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [currentView, setCurrentView] = useState<"student" | "admin">("student");
   const [customQuestions, setCustomQuestions] = useState<IC3Question[]>([]);
   const [selectedLevel, setSelectedLevel] = useState<string | null>(null);

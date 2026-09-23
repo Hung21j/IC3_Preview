@@ -118,9 +118,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
 
   // Authentication & View Management
-  const [currentUser, setCurrentUser] = useState<User | null>(() => {
-    return apiService.getActiveSession()?.user || null;
-  });
+  const [currentUser, setCurrentUser] = useState<User | null>((null);
   const [currentView, setCurrentView] = useState<"student" | "admin">("student");
   const [customQuestions, setCustomQuestions] = useState<IC3Question[]>([]);
   const [selectedLevel, setSelectedLevel] = useState<string | null>(null);
@@ -167,6 +165,10 @@ export default function App() {
       setCurrentView("student");
     }
   };
+  
+  useEffect(() => {
+    apiService.setActiveSession(null);
+  }, []);
 
   // Load custom questions, level and history
   useEffect(() => {

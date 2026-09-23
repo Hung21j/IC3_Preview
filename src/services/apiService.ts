@@ -624,6 +624,39 @@ export const apiService = {
     }
   },
 
+  // Admin: Force logout another account
+  async forceLogoutUser(userId: string): Promise<void> {
+    if (!userId) {
+      throw new Error("Không xác định được tài khoản.");
+    }
+  
+    try {
+      await firestoreService.forceLogoutUser(userId);
+    } catch (err) {
+      console.warn("Cloud force logout failed:", err);
+    }
+  
+    // Local fallback
+    const localUsers = getLocalUsers();
+    const target = localUsers.find((u) => u.user.id === userId);
+  
+    if (target) {
+      target.user.isOnline = false;
+      target.user.sessionVersion =
+        (target.user.sessionVersion || 0) + 1;
+  
+      saveLocalUsers(localUsers);
+    }
+  
+    // Backend nếu có
+    safeFetchJson(`/api/admin/users/${userId}/logout`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      }
+    }).catch(() => {});
+  },
+
   // Admin: Create Bulk Users
   async createBulkUsers(
     studentList: Array<{

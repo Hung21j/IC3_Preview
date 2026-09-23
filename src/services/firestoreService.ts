@@ -129,7 +129,8 @@ export const firestoreService = {
             school: data.school || "",
             role: data.role || "student",
             createdAt: data.createdAt || new Date().toISOString(),
-            isOnline: !!data.isOnline
+            isOnline: !!data.isOnline,
+            sessionVersion: data.sessionVersion || 0
           },
           password: data.password || "123"
         });
@@ -182,6 +183,61 @@ export const firestoreService = {
       // Ignore if document not found or offline
     }
   },
+
+  async forceLogoutUser(userId: string): Promise<void> {
+    const userRef = doc(db, USERS_COLLECTION, userId);
+  
+    // Đọc dữ liệu hiện tại
+    const snap = await getDocs(collection(db, USERS_COLLECTION));
+  
+    const target = snap.docs.find((d) => d.id === userId);
+  
+    if (!target) {
+      throw new Error("Không tìm thấy tài khoản.");
+    }
+  
+    const data = target.data() as any;
+    const nextVersion = (data.sessionVersion || 0) + 1;
+  
+    // Tăng version => các thiết bị đang đăng nhập sẽ bị buộc logout
+    await updateDoc(userRef, {
+      isOnline: false,
+      sessionVersion: nextVersion,
+      lastLogout: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    });
+  
+    // Đồng thời đóng các session đang hoạt động của user
+    try {
+      const sessionSnap = await getDocs(collection(db, SESSIONS_COLLECTION));
+  
+      const now = new Date().toISOString();
+  
+      for (const sessionDoc of sessionSnap.docs) {
+        const session = sessionDoc.data() as SessionLog;
+  
+        if (
+          session.userId === userId &&
+          !session.logoutTime
+        ) {
+          const loginTime = new Date(session.loginTime).getTime();
+          const logoutTime = new Date(now).getTime();
+  
+          await updateDoc(sessionDoc.ref, {
+            logoutTime: now,
+            durationSeconds: Math.max(
+              0,
+              Math.floor((logoutTime - loginTime) / 1000)
+            ),
+            isOnline: false
+          });
+        }
+      }
+    } catch (err) {
+      console.warn("Could not close active sessions:", err);
+    }
+  },
+  
 
   // ================= 📝 CUSTOM QUESTIONS =================
   async getCloudQuestions(): Promise<IC3Question[]> {

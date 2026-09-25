@@ -585,7 +585,7 @@ export default function App() {
 
       {/* 🔮 Center Focused Layout Main Workspace - Single Column */}
       <main className="flex-1 overflow-y-auto bg-[#f0f3f8] py-6 px-4 md:px-8">
-        <div className="max-w-4xl mx-auto w-full space-y-6">
+        <div className="max-w-7xl mx-auto w-full space-y-6">
           
           {/* 1. Main Focused Question Bank Display - Expanded */}
           {selectedLevel && (

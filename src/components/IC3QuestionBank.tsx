@@ -32,7 +32,7 @@ import { motion, AnimatePresence } from "motion/react";
 interface IC3QuestionBankProps {
   selectedLevel: string;
   onSelectQuestionToSolve: (data: {
-    questionText: string;
+    question: string;
     questionType: QuestionType;
     image: string | null;
     options: string[];
@@ -1600,7 +1600,7 @@ export default function IC3QuestionBank({
                                           handleUnmatch(pair.left);
                                         }
                                       }}
-                                      className={`flex-1 min-h-[64px] p-3 rounded-lg border text-xs md:text-sm leading-relaxed cursor-pointer transition flex items-center justify-between gap-3 relative select-none ${slotStyle}`}
+                                      className={`flex-1 min-h-[64px] p-3 rounded-lg border text-base md:text-sm leading-relaxed cursor-pointer transition flex items-center justify-between gap-3 relative select-none ${slotStyle}`}
                                     >
                                       {matchedDef ? (
                                         <>

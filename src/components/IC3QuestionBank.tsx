@@ -1585,7 +1585,7 @@ export default function IC3QuestionBank({
                                     onDrop={(e) => handleDrop(e, pair.left)}
                                   >
                                     {/* Term description */}
-                                    <div className="sm:w-1/3 flex items-center justify-center p-3.5 bg-indigo-600 text-white rounded-lg shadow-xs shrink-0 font-mono font-black text-xs text-center">
+                                    <div className="sm:w-1/3 flex items-center justify-center p-3.5 bg-indigo-600 text-white rounded-lg shadow-xs shrink-0 font-mono font-black text-base text-center">
                                       <span>{pair.left}</span>
                                     </div>
 

@@ -19,6 +19,7 @@ export interface IC3Question {
   // (Đề "Tổng hợp FULL" sẽ tự động hiển thị tất cả các câu hỏi của cấp độ đó)
   subsetId: "GM1" | "GM2" | "OT1" | "OT2" | "OT3" | "OT4" | "OT5";
   
+  questionNumber?: number;
   type: QuestionType; // "multiple_choice" hoặc "yes_no" hoặc "matching"
   text: string;
   options?: string[]; // Danh sách đáp án lựa chọn (cho dạng multiple_choice)
@@ -60,6 +61,7 @@ export const IC3_QUESTIONS: IC3Question[] = [
     id: "l1-matching-q1",
     levelId: "level-1",
     subsetId: "GM1",
+    questionNumber: 1,
     type: "matching",
     text: "Hãy thực hiện ghép nối hoặc kéo thả các thuật ngữ công nghệ sau đây:",
     pairs: [
@@ -78,6 +80,7 @@ export const IC3_QUESTIONS: IC3Question[] = [
     id: "l3-matching-q1",
     levelId: "level-3",
     subsetId: "GM1",
+    questionNumber: 1,
     type: "matching",
     text: "hãy chuyển từng nhu cầu từ danh sách ở bên phải sang thiết bị kỹ thuật số ở bên trái.",
     pairs: [

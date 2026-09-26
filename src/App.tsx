@@ -597,7 +597,7 @@ export default function App() {
                 onOpenAdminDashboard={currentUser.role === "admin" ? () => setCurrentView("admin") : undefined}
                 onSelectQuestionToSolve={(data) => {
                   handleSolve({
-                    questionText: data.questionText,
+                    questionText: data.questionText || data.question || "",
                     questionType: data.questionType,
                     image: data.image,
                     options: data.options

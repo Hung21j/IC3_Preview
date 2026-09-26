@@ -25,14 +25,16 @@ import {
   Award,
   BookOpen,
   Flag,
-  ChevronDown
+  ChevronDown,
+  LayoutGrid
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 
 interface IC3QuestionBankProps {
   selectedLevel: string;
   onSelectQuestionToSolve: (data: {
-    question: string;
+    questionText: string;
+    question?: string;
     questionType: QuestionType;
     image: string | null;
     options: string[];
@@ -187,18 +189,25 @@ export default function IC3QuestionBank({
       return userSelected.every((k, i) => k === targetSelected[i]);
     }
 
-    if (question.type === "yes_no" && question.statements?.length) {
-    try {
-      const parsed = JSON.parse(ans) as Record<string, string>;
-  
-      return question.statements.every(
-        (statement, index) =>
-          parsed[String(index)] === statement.correct
-      );
-    } catch {
-      return false;
+    if (question.type === "yes_no") {
+      const statementsList = (question.statements && question.statements.length > 0)
+        ? question.statements
+        : [
+            {
+              text: question.text,
+              correct: (question.correctKeys?.[0] === "False" ? "False" : "True") as "True" | "False"
+            }
+          ];
+
+      try {
+        const parsed = JSON.parse(ans) as Record<string, string>;
+        return statementsList.every(
+          (statement, index) => parsed[String(index)] === statement.correct
+        );
+      } catch {
+        return question.correctKeys?.includes(ans) || false;
+      }
     }
-  }
     return question.correctKeys?.includes(ans) || false;
   };
 
@@ -343,6 +352,18 @@ export default function IC3QuestionBank({
       };
     }
 
+    if (question.type === "yes_no" && question.statements && question.statements.length > 1) {
+      const shuffledStatements = shuffleArray(question.statements);
+      const newAnswerText = shuffledStatements
+        .map((s, idx) => `${idx + 1}. ${s.correct === "True" ? "Đúng" : "Sai"}`)
+        .join("\n");
+      return {
+        ...question,
+        statements: shuffledStatements,
+        correctAnswerText: newAnswerText
+      };
+    }
+
     return { ...question };
   };
 
@@ -447,6 +468,22 @@ export default function IC3QuestionBank({
     });
   };
 
+  // Auto-scroll handler during drag-and-drop when mouse/drag reaches viewport boundary
+  const handleDragAutoScroll = (e: React.DragEvent) => {
+    if (!e.clientY) return;
+    const threshold = 120;
+    const scrollStep = 22;
+
+    const mainContainer = document.querySelector("main");
+    if (e.clientY > window.innerHeight - threshold) {
+      if (mainContainer) mainContainer.scrollTop += scrollStep;
+      window.scrollBy({ top: scrollStep, behavior: "auto" });
+    } else if (e.clientY < threshold) {
+      if (mainContainer) mainContainer.scrollTop -= scrollStep;
+      window.scrollBy({ top: -scrollStep, behavior: "auto" });
+    }
+  };
+
   // Toggle or start stopwatch running timer
   useEffect(() => {
     if (isTimerActive) {
@@ -466,6 +503,25 @@ export default function IC3QuestionBank({
 
   // Handle active sub-selection click
   const handleStartSubset = (subsetId: string) => {
+    const rawList = getSubsetQuestions(subsetId, levelQuestions);
+
+    // Sắp xếp thứ tự câu hỏi theo level và subset (dựa trên questionNumber hoặc order)
+    const sortedList = [...rawList].sort((a, b) => {
+      const numA = typeof a.questionNumber === "number" ? a.questionNumber : (typeof a.order === "number" ? a.order : 999999);
+      const numB = typeof b.questionNumber === "number" ? b.questionNumber : (typeof b.order === "number" ? b.order : 999999);
+      return numA - numB;
+    });
+
+    let prepared: IC3Question[];
+    if (selectedPracticeMode === "training") {
+      // Training: Giữ nguyên số thứ tự của câu hỏi, xáo trộn thứ tự các câu trả lời trong từng câu
+      prepared = sortedList.map((q) => shuffleQuestionOptions(q));
+    } else {
+      // Testing: Xáo trộn cả số thứ tự câu hỏi và thứ tự các câu trả lời trong từng câu
+      prepared = shuffleArray(sortedList).map((q) => shuffleQuestionOptions(q));
+    }
+
+    setSessionQuestions(prepared);
     setSelectedSubSet(subsetId);
     setCurrentIndex(0);
     setSelectedAnswers({});
@@ -699,7 +755,7 @@ export default function IC3QuestionBank({
             </div>
             <div>
               <h3 className="text-md font-black text-slate-900 uppercase tracking-widest font-mono leading-none">
-                {selectedLevel.toUpperCase()}
+                {selectedLevel.toUpperCase()}{selectedSubSet ? ` • ĐỀ ${selectedSubSet}` : ""}
               </h3>
             </div>
           </div>
@@ -1161,64 +1217,68 @@ export default function IC3QuestionBank({
             // In Training and checked: reveal result.
             const showAnswerDetail = appMode === "training" && isChecked;
 
+            // Stats calculation for both training and testing modes
+            const answeredCount = activeQuestions.filter((item) => {
+              const ans = selectedAnswers[item.id];
+              if (!ans) return false;
+              if (item.type === "yes_no") {
+                try {
+                  return Object.keys(JSON.parse(ans)).length > 0;
+                } catch {
+                  return false;
+                }
+              }
+              if (item.type === "matching") {
+                try {
+                  return Object.keys(JSON.parse(ans)).length > 0;
+                } catch {
+                  return false;
+                }
+              }
+              return true;
+            }).length;
+            const flaggedCount = activeQuestions.filter((item) => !!flaggedQuestions[item.id]).length;
+            const unansweredCount = activeQuestions.length - answeredCount;
+
+            const checkedCount = activeQuestions.filter((item) => !!checkedQuestions[item.id]).length;
+            const correctTrainingCount = activeQuestions.filter((item) => {
+              return !!checkedQuestions[item.id] && checkIfQuestionIsCorrect(item, selectedAnswers[item.id]);
+            }).length;
+            const wrongTrainingCount = checkedCount - correctTrainingCount;
+
             return (
-              <div className="flex-grow flex flex-col justify-between">
+              <div className="flex-grow flex flex-col lg:flex-row items-stretch">
                 
-                {/* Visual top selector bubbles to jump directly to any question in testing */}
-                {appMode === "testing" && (
-                  <div className="bg-slate-100/90 border-b-2 border-slate-200 px-4 py-3 flex items-center justify-center gap-2 flex-wrap">
-                    <span className="text-xs font-black text-slate-800 uppercase font-mono tracking-wider mr-1">Bản đồ câu:</span>
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      {activeQuestions.map((item, idx) => {
-                        const hasAns = selectedAnswers[item.id];
-                        const isActive = idx === safeIndex;
-                        const isFlagged = flaggedQuestions[item.id];
-
-                        let bubbleStyle = "bg-white text-slate-800 border-2 border-slate-300 hover:border-slate-400 font-bold";
-                        if (isActive) {
-                          bubbleStyle = `bg-indigo-50 border-2 border-indigo-600 text-indigo-900 font-black ring-2 ${themeConfig.accentGlow}`;
-                        } else if (hasAns) {
-                          bubbleStyle = `bg-indigo-600 text-white border-2 border-indigo-600 font-black`;
-                        }
-
-                        return (
-                          <button
-                            key={item.id}
-                            type="button"
-                            onClick={() => {
-                              setDirection(idx > safeIndex ? 1 : -1);
-                              setCurrentIndex(idx);
-                            }}
-                            className={`w-7 h-7 rounded-lg border text-xs font-mono flex items-center justify-center shadow-xs transition active:scale-95 relative cursor-pointer ${bubbleStyle}`}
-                          >
-                            <span>{idx + 1}</span>
-                            {isFlagged && (
-                              <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-rose-500 rounded-full border border-white" />
+                {/* LEFT COLUMN: QUESTION CONTENT AND ACTION CONTROLS */}
+                <div className="flex-1 flex flex-col justify-between min-w-0">
+                  
+                  {/* Main Content Area */}
+                  <div className="p-4 sm:p-5 md:p-6 flex-1 relative overflow-y-auto min-h-[350px]">
+                    <AnimatePresence mode="wait" custom={direction}>
+                      <motion.div
+                        key={q.id}
+                        custom={direction}
+                        initial={{ opacity: 0, x: direction * 50 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: -direction * 50 }}
+                        transition={{ duration: 0.18, ease: "easeInOut" }}
+                        className="space-y-4"
+                      >
+                        {/* Sub Mode Title Badge & Question Indicator */}
+                        <div className="flex items-center justify-between border-b-2 border-slate-200 pb-3 flex-wrap gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className={`inline-block text-xs font-black uppercase font-mono px-3 py-1 rounded-md text-emerald-800 bg-emerald-50 border border-emerald-200`}>
+                              {appMode === "training" ? "TRAINING (LUYỆN TẬP)" : "TESTING (THI THỬ)"}
+                            </span>
+                            <span className="text-xs font-mono font-black text-indigo-800 bg-indigo-50 border border-indigo-200 px-2.5 py-1 rounded-md">
+                              Câu {safeIndex + 1}/{activeQuestions.length}
+                            </span>
+                            {appMode === "training" && (q.questionNumber || q.order) && (
+                              <span className="text-[10px] font-mono font-bold text-slate-500 bg-slate-100 border border-slate-200 px-2 py-1 rounded-md">
+                                STT: #{q.questionNumber || q.order}
+                              </span>
                             )}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {/* Main Content Area */}
-                <div className="p-5 md:p-6 flex-1 relative overflow-hidden min-h-[350px]">
-                  <AnimatePresence mode="wait" custom={direction}>
-                    <motion.div
-                      key={q.id}
-                      custom={direction}
-                      initial={{ opacity: 0, x: direction * 50 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      exit={{ opacity: 0, x: -direction * 50 }}
-                      transition={{ duration: 0.18, ease: "easeInOut" }}
-                      className="space-y-4"
-                    >
-                      {/* Sub Mode Title Badge */}
-                      <div className="flex items-center justify-between border-b-2 border-slate-200 pb-3">
-                        <span className={`inline-block text-xs font-black uppercase font-mono px-3 py-1 rounded-md text-emerald-800 bg-emerald-50 border border-emerald-200`}>
-                          {appMode === "training" ? "TRAINING (LUYỆN TẬP)" : "TESTING (THI THỬ)"}
-                        </span>
+                          </div>
 
                         {/* Flag to highlight button */}
                         <button
@@ -1336,7 +1396,7 @@ export default function IC3QuestionBank({
                                   <span className={`w-6 h-6 rounded-lg flex items-center justify-center font-mono font-black text-xs border shrink-0 ${circleStyle}`}>
                                     {letterKey}
                                   </span>
-                                  <span className="flex-1 leading-relaxed">{opt}</span>
+                                  <span className="flex-1 leading-relaxed break-words">{opt.replace(/^[A-J][\.\:\)]\s*/i, "")}</span>
                                   {isMulti && (
                                     <span
                                       className={`w-5 h-5 rounded border-2 flex items-center justify-center text-xs shrink-0 transition ${
@@ -1406,149 +1466,137 @@ export default function IC3QuestionBank({
                       )} */}
 
 
-                      {q.type === "yes_no" && q.statements && (
-                        <div className="space-y-3 pt-1">
-                      
-                          <div className="flex items-center gap-1.5">
-                            <Compass className="w-4 h-4 text-slate-600" />
-                      
-                            <span className="text-xs font-black uppercase text-slate-800 font-mono tracking-wider">
-                              Hãy xác định các phát biểu sau là Đúng hay Sai:
-                            </span>
-                          </div>
-                      
-                          <div className="overflow-hidden rounded-xl border-2 border-slate-300">
-                      
-                            {/* HEADER */}
-                            <div className="grid grid-cols-[1fr_90px_90px] bg-slate-100 border-b-2 border-slate-300">
-                      
-                              <div className="p-3 font-black text-xs uppercase font-mono text-slate-800">
-                                Các phát biểu
-                              </div>
-                      
-                              <div className="p-3 text-center font-black text-xs uppercase font-mono text-emerald-700 border-l border-slate-300">
-                                Đúng
-                              </div>
-                      
-                              <div className="p-3 text-center font-black text-xs uppercase font-mono text-rose-700 border-l border-slate-300">
-                                Sai
-                              </div>
-                      
-                            </div>
-                      
-                            {/* STATEMENTS */}
-                            {q.statements.map((statement, index) => {
-                      
-                              let parsedAnswer: Record<string, string> = {};
-                      
-                              try {
-                                parsedAnswer = JSON.parse(userAns || "{}");
-                              } catch {
-                                parsedAnswer = {};
+                      {q.type === "yes_no" && (() => {
+                        const statementsList = (q.statements && q.statements.length > 0)
+                          ? q.statements
+                          : [
+                              {
+                                text: q.text,
+                                correct: (q.correctKeys?.[0] === "False" ? "False" : "True") as "True" | "False"
                               }
-                      
-                              const selectedValue = parsedAnswer[String(index)];
-                      
-                              const isTrueSelected = selectedValue === "True";
-                              const isFalseSelected = selectedValue === "False";
-                      
-                              const isCorrectAnswer =
-                                statement.correct === selectedValue;
-                      
-                              return (
-                                <div
-                                  key={index}
-                                  className={`grid grid-cols-[1fr_90px_90px] border-b border-slate-200 last:border-b-0 transition ${
-                                    appMode === "training" && isChecked
-                                      ? isCorrectAnswer
-                                        ? "bg-emerald-50"
-                                        : "bg-rose-50"
-                                      : "bg-white"
-                                  }`}
-                                >
-                      
-                                  {/* STATEMENT */}
-                                  <div className="p-4 flex items-center">
-                      
-                                    <span className="mr-3 w-7 h-7 rounded-lg bg-slate-100 border border-slate-300 flex items-center justify-center text-xs font-black font-mono shrink-0">
-                                      {index + 1}
-                                    </span>
-                      
-                                    <span className="text-sm font-semibold leading-relaxed text-slate-900">
-                                      {statement.text}
-                                    </span>
-                      
-                                  </div>
-                      
-                                  {/* TRUE */}
-                                  <div className="border-l border-slate-200 flex items-center justify-center p-3">
-                      
-                                    <button
-                                      type="button"
-                                      disabled={appMode === "training" && isChecked}
-                                      onClick={() =>
-                                        handleSelectStatementAnswer(q, index, "True")
-                                      }
-                                      className={`w-8 h-8 rounded-md border-2 flex items-center justify-center transition ${
-                                        isTrueSelected
-                                          ? "bg-emerald-600 border-emerald-600 text-white"
-                                          : "bg-white border-slate-400 hover:border-emerald-500"
-                                      } ${
-                                        appMode === "training" && isChecked
-                                          ? "cursor-not-allowed"
-                                          : "cursor-pointer"
-                                      }`}
-                                    >
-                                      {isTrueSelected && (
-                                        <Check className="w-5 h-5" />
-                                      )}
-                                    </button>
-                      
-                                  </div>
-                      
-                                  {/* FALSE */}
-                                  <div className="border-l border-slate-200 flex items-center justify-center p-3">
-                      
-                                    <button
-                                      type="button"
-                                      disabled={appMode === "training" && isChecked}
-                                      onClick={() =>
-                                        handleSelectStatementAnswer(q, index, "False")
-                                      }
-                                      className={`w-8 h-8 rounded-md border-2 flex items-center justify-center transition ${
-                                        isFalseSelected
-                                          ? "bg-rose-600 border-rose-600 text-white"
-                                          : "bg-white border-slate-400 hover:border-rose-500"
-                                      } ${
-                                        appMode === "training" && isChecked
-                                          ? "cursor-not-allowed"
-                                          : "cursor-pointer"
-                                      }`}
-                                    >
-                                      {isFalseSelected && (
-                                        <Check className="w-5 h-5" />
-                                      )}
-                                    </button>
-                      
-                                  </div>
-                      
+                            ];
+
+                        return (
+                          <div className="space-y-3 pt-1">
+                            <div className="flex items-center gap-1.5">
+                              <Compass className="w-4 h-4 text-slate-600" />
+                              <span className="text-xs font-black uppercase text-slate-800 font-mono tracking-wider">
+                                Hãy xác định các phát biểu sau là Đúng hay Sai:
+                              </span>
+                            </div>
+
+                            <div className="overflow-hidden rounded-xl border-2 border-slate-300">
+                              {/* HEADER */}
+                              <div className="grid grid-cols-[1fr_75px_75px] sm:grid-cols-[1fr_90px_90px] bg-slate-100 border-b-2 border-slate-300">
+                                <div className="p-3 font-black text-xs uppercase font-mono text-slate-800">
+                                  Các phát biểu
                                 </div>
-                              );
-                            })}
-                      
+                                <div className="p-3 text-center font-black text-xs uppercase font-mono text-emerald-700 border-l border-slate-300">
+                                  Đúng
+                                </div>
+                                <div className="p-3 text-center font-black text-xs uppercase font-mono text-rose-700 border-l border-slate-300">
+                                  Sai
+                                </div>
+                              </div>
+
+                              {/* STATEMENTS */}
+                              {statementsList.map((statement, index) => {
+                                let parsedAnswer: Record<string, string> = {};
+                                try {
+                                  parsedAnswer = JSON.parse(userAns || "{}");
+                                } catch {
+                                  parsedAnswer = {};
+                                }
+
+                                const selectedValue = parsedAnswer[String(index)];
+                                const isTrueSelected = selectedValue === "True";
+                                const isFalseSelected = selectedValue === "False";
+                                const isCorrectAnswer = statement.correct === selectedValue;
+
+                                return (
+                                  <div
+                                    key={index}
+                                    className={`grid grid-cols-[1fr_75px_75px] sm:grid-cols-[1fr_90px_90px] border-b border-slate-200 last:border-b-0 transition ${
+                                      appMode === "training" && isChecked
+                                        ? isCorrectAnswer
+                                          ? "bg-emerald-50"
+                                          : "bg-rose-50"
+                                        : "bg-white"
+                                    }`}
+                                  >
+                                    {/* STATEMENT */}
+                                    <div className="p-3.5 sm:p-4 flex items-center min-w-0">
+                                      <span className="mr-2.5 sm:mr-3 w-6 h-6 sm:w-7 sm:h-7 rounded-lg bg-slate-100 border border-slate-300 flex items-center justify-center text-xs font-black font-mono shrink-0">
+                                        {index + 1}
+                                      </span>
+                                      <span className="text-xs sm:text-sm font-semibold leading-relaxed text-slate-900 break-words flex-1 min-w-0">
+                                        {statement.text}
+                                      </span>
+                                    </div>
+
+                                    {/* TRUE */}
+                                    <div className="border-l border-slate-200 flex items-center justify-center p-2.5 sm:p-3">
+                                      <button
+                                        type="button"
+                                        disabled={appMode === "training" && isChecked}
+                                        onClick={() =>
+                                          handleSelectStatementAnswer(q, index, "True")
+                                        }
+                                        className={`w-7 h-7 sm:w-8 sm:h-8 rounded-md border-2 flex items-center justify-center transition ${
+                                          isTrueSelected
+                                            ? "bg-emerald-600 border-emerald-600 text-white"
+                                            : "bg-white border-slate-400 hover:border-emerald-500"
+                                        } ${
+                                          appMode === "training" && isChecked
+                                            ? "cursor-not-allowed"
+                                            : "cursor-pointer"
+                                        }`}
+                                      >
+                                        {isTrueSelected && (
+                                          <Check className="w-4 h-4 sm:w-5 sm:h-5" />
+                                        )}
+                                      </button>
+                                    </div>
+
+                                    {/* FALSE */}
+                                    <div className="border-l border-slate-200 flex items-center justify-center p-2.5 sm:p-3">
+                                      <button
+                                        type="button"
+                                        disabled={appMode === "training" && isChecked}
+                                        onClick={() =>
+                                          handleSelectStatementAnswer(q, index, "False")
+                                        }
+                                        className={`w-7 h-7 sm:w-8 sm:h-8 rounded-md border-2 flex items-center justify-center transition ${
+                                          isFalseSelected
+                                            ? "bg-rose-600 border-rose-600 text-white"
+                                            : "bg-white border-slate-400 hover:border-rose-500"
+                                        } ${
+                                          appMode === "training" && isChecked
+                                            ? "cursor-not-allowed"
+                                            : "cursor-pointer"
+                                        }`}
+                                      >
+                                        {isFalseSelected && (
+                                          <Check className="w-4 h-4 sm:w-5 sm:h-5" />
+                                        )}
+                                      </button>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
                           </div>
-                      
-                        </div>
-                      )}
+                        );
+                      })()}
                       
 
                       {/* Matching (Ghép nối / Kéo thả) Question Interface */}
                       {q.type === "matching" && q.pairs && (
                         <div className="space-y-4 pt-1">
 
-                          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
+                          <div className="grid grid-cols-1 xl:grid-cols-12 gap-4 items-stretch">
                             {/* Left Column: Terms to Match */}
-                            <div className="lg:col-span-7 space-y-3">
+                            <div className="xl:col-span-7 space-y-3">
                               <span className="text-xs font-black text-slate-800 block uppercase font-mono tracking-wider">DANH SÁCH THUẬT NGỮ</span>
                               {q.pairs.map((pair) => {
                                 const matchedDef = (() => {
@@ -1581,11 +1629,14 @@ export default function IC3QuestionBank({
                                   <div 
                                     key={pair.left} 
                                     className="flex flex-col sm:flex-row items-stretch gap-3 bg-white p-3.5 rounded-xl border-2 border-slate-200 transition-all hover:border-slate-300 shadow-xs"
-                                    onDragOver={handleDragOver}
+                                    onDragOver={(e) => {
+                                      handleDragOver(e);
+                                      handleDragAutoScroll(e);
+                                    }}
                                     onDrop={(e) => handleDrop(e, pair.left)}
                                   >
                                     {/* Term description */}
-                                    <div className="sm:w-1/3 flex items-center justify-center p-3.5 bg-indigo-600 text-white rounded-lg shadow-xs shrink-0 font-mono font-black text-base text-center">
+                                    <div className="sm:w-2/5 xl:w-1/3 flex items-center justify-center p-3 bg-indigo-600 text-white rounded-lg shadow-xs shrink-0 font-mono font-bold text-xs sm:text-sm text-center break-words">
                                       <span>{pair.left}</span>
                                     </div>
 
@@ -1600,11 +1651,11 @@ export default function IC3QuestionBank({
                                           handleUnmatch(pair.left);
                                         }
                                       }}
-                                      className={`flex-1 min-h-[64px] p-3 rounded-lg border text-base md:text-sm leading-relaxed cursor-pointer transition flex items-center justify-between gap-3 relative select-none ${slotStyle}`}
+                                      className={`flex-1 min-h-[58px] p-3 rounded-lg border text-xs sm:text-sm leading-relaxed cursor-pointer transition flex items-center justify-between gap-2.5 relative select-none break-words ${slotStyle}`}
                                     >
                                       {matchedDef ? (
                                         <>
-                                          <span className="flex-1 font-bold text-slate-950">{matchedDef}</span>
+                                          <span className="flex-1 font-bold text-slate-950 break-words">{matchedDef}</span>
                                           {!(appMode === "training" && isChecked) && (
                                             <button 
                                               type="button"
@@ -1620,7 +1671,7 @@ export default function IC3QuestionBank({
                                           )}
                                         </>
                                       ) : (
-                                        <div className="w-full flex items-center justify-center gap-1.5 py-2 text-slate-500 font-semibold italic text-xs">
+                                        <div className="w-full flex items-center justify-center gap-1.5 py-2 text-slate-500 font-semibold italic text-xs text-center">
                                           <span>{selectedPoolDef ? "👉 Nhấp để thả định nghĩa đã chọn" : "🫳 Thả định nghĩa vào đây"}</span>
                                         </div>
                                       )}
@@ -1631,7 +1682,7 @@ export default function IC3QuestionBank({
                             </div>
 
                             {/* Right Column: Unassigned pool of definitions */}
-                            <div className="lg:col-span-5 flex flex-col space-y-3">
+                            <div className="xl:col-span-5 flex flex-col space-y-3">
                               <div className="flex items-center justify-between">
                                 <span className="text-xs font-black text-slate-800 block uppercase font-mono tracking-wider">
                                   ĐỊNH NGHĨA CHỜ GHÉP ({matchingPool.filter(p => {
@@ -1652,6 +1703,10 @@ export default function IC3QuestionBank({
                                     Hủy chọn
                                   </button>
                                 )}
+                              </div>
+
+                              <div className="text-[11px] font-semibold text-indigo-900 bg-indigo-50 border border-indigo-200 p-2.5 rounded-xl flex items-center gap-2">
+                                <span>💡 <b>Mẹo:</b> Nhấn giữ chuột vào đáp án để kéo (kéo sát mép màn hình sẽ tự cuộn trang), hoặc nhấp chuột chọn đáp án rồi nhấp vào ô thuật ngữ cần ghép!</span>
                               </div>
 
                               <div className="flex-1 space-y-2.5 max-h-[480px] overflow-y-auto pr-1 bg-slate-100 p-3 rounded-xl border-2 border-slate-300 min-h-[220px]">
@@ -1679,6 +1734,7 @@ export default function IC3QuestionBank({
                                       key={defItem.id}
                                       draggable={!(appMode === "training" && isChecked)}
                                       onDragStart={(e) => handleDragStart(e, defItem.text)}
+                                      onDrag={(e) => handleDragAutoScroll(e)}
                                       onClick={() => {
                                         if (appMode === "training" && isChecked) return;
                                         if (isCurrentlySelected) {
@@ -1689,7 +1745,7 @@ export default function IC3QuestionBank({
                                       }}
                                       className={`p-3 rounded-xl border text-xs md:text-sm leading-relaxed font-semibold transition flex items-center justify-between gap-3 shadow-xs select-none ${itemClass}`}
                                     >
-                                      <span className="flex-1">{defItem.text}</span>
+                                      <span className="flex-1 break-words">{defItem.text}</span>
                                       {!(appMode === "training" && isChecked) && (
                                         <div className="w-5 h-5 bg-slate-100 rounded border border-slate-300 text-slate-500 flex items-center justify-center font-bold text-xs shrink-0 font-mono">
                                           ⠿
@@ -1824,10 +1880,229 @@ export default function IC3QuestionBank({
                   {appMode === "training" ? (
                     <span>Mẹo: Ấn <kbd className="bg-white border border-slate-400 rounded px-1.5 py-0.5 text-slate-900 font-bold">Enter</kbd> lần 1 để nộp xem đáp án, ấn <kbd className="bg-white border border-slate-400 rounded px-1.5 py-0.5 text-slate-900 font-bold font-mono">Enter</kbd> lần 2 để qua câu tiếp theo!</span>
                   ) : (
-                    <span>Bản đồ câu hỗ trợ nhấp chuột nhảy cóc nhanh. Dùng phím <kbd className="bg-white border border-slate-400 rounded px-1.5 py-0.5 text-slate-900 font-bold font-mono">←</kbd> <kbd className="bg-white border border-slate-400 rounded px-1.5 py-0.5 text-slate-900 font-bold font-mono">→</kbd> xoay lật đổi trang liên tục!</span>
+                    <span>Bản đồ câu bên phải hỗ trợ nhấp chuột nhảy cóc nhanh. Dùng phím <kbd className="bg-white border border-slate-400 rounded px-1.5 py-0.5 text-slate-900 font-bold font-mono">←</kbd> <kbd className="bg-white border border-slate-400 rounded px-1.5 py-0.5 text-slate-900 font-bold font-mono">→</kbd> để đổi câu liên tục!</span>
                   )}
                 </div>
               </div>
+
+              {/* RIGHT COLUMN: QUESTION GRID SIDEBAR FOR BOTH TRAINING & TESTING MODES */}
+              {(appMode === "testing" || appMode === "training") && (
+                <div className="w-full lg:w-80 border-t-2 lg:border-t-0 lg:border-l-2 border-slate-300 bg-slate-50/95 p-4 sm:p-5 flex flex-col justify-between shrink-0 overflow-y-auto">
+                  <div className="space-y-4">
+                    {/* Title & Stats */}
+                    <div className="flex items-center justify-between border-b-2 border-slate-200 pb-3">
+                      <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center shadow-xs">
+                          <LayoutGrid className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <h4 className="text-xs font-black uppercase font-mono tracking-wider text-slate-900">
+                            Bản đồ câu hỏi
+                          </h4>
+                          <span className="text-[11px] font-bold text-slate-500 font-mono">
+                            {appMode === "training"
+                              ? `Đã nộp ${checkedCount}/${activeQuestions.length} câu`
+                              : `Đã làm ${answeredCount}/${activeQuestions.length} câu`}
+                          </span>
+                        </div>
+                      </div>
+
+                      <span className="px-2 py-1 rounded-md bg-indigo-100 text-indigo-800 text-xs font-black font-mono">
+                        {Math.round(((appMode === "training" ? checkedCount : answeredCount) / (activeQuestions.length || 1)) * 100)}%
+                      </span>
+                    </div>
+
+                    {/* Progress Bar */}
+                    <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
+                      <div
+                        className={`${appMode === "training" ? "bg-emerald-600" : "bg-indigo-600"} h-full rounded-full transition-all duration-300`}
+                        style={{
+                          width: `${((appMode === "training" ? checkedCount : answeredCount) / (activeQuestions.length || 1)) * 100}%`
+                        }}
+                      />
+                    </div>
+
+                    {/* Quick Summary Pill Counters */}
+                    {appMode === "training" ? (
+                      <div className="grid grid-cols-4 gap-1 text-center text-[10px] font-mono font-bold">
+                        <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 py-1.5 px-0.5 rounded-lg">
+                          Đúng: <span className="font-black">{correctTrainingCount}</span>
+                        </div>
+                        <div className="bg-rose-50 border border-rose-200 text-rose-800 py-1.5 px-0.5 rounded-lg">
+                          Sai: <span className="font-black">{wrongTrainingCount}</span>
+                        </div>
+                        <div className="bg-slate-100 border border-slate-300 text-slate-700 py-1.5 px-0.5 rounded-lg">
+                          Chưa: <span className="font-black">{activeQuestions.length - checkedCount}</span>
+                        </div>
+                        <div className="bg-amber-50 border border-amber-200 text-amber-800 py-1.5 px-0.5 rounded-lg">
+                          Cờ: <span className="font-black">{flaggedCount}</span>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-3 gap-1.5 text-center text-[10px] font-mono font-bold">
+                        <div className="bg-indigo-50 border border-indigo-200 text-indigo-900 py-1.5 px-1 rounded-lg">
+                          Đã làm: <span className="font-black">{answeredCount}</span>
+                        </div>
+                        <div className="bg-slate-100 border border-slate-300 text-slate-700 py-1.5 px-1 rounded-lg">
+                          Chưa: <span className="font-black">{unansweredCount}</span>
+                        </div>
+                        <div className="bg-rose-50 border border-rose-200 text-rose-800 py-1.5 px-1 rounded-lg">
+                          Cờ: <span className="font-black">{flaggedCount}</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Grid of Questions */}
+                    <div>
+                      <span className="text-[10px] font-extrabold uppercase font-mono text-slate-500 block mb-2">
+                        Danh sách câu hỏi (dạng lưới):
+                      </span>
+                      <div className="grid grid-cols-5 sm:grid-cols-6 lg:grid-cols-5 gap-2 max-h-[380px] lg:max-h-[440px] overflow-y-auto pr-1 py-1">
+                        {activeQuestions.map((item, idx) => {
+                          const ans = selectedAnswers[item.id];
+                          let hasAns = !!ans;
+                          if (item.type === "yes_no") {
+                            try {
+                              hasAns = Object.keys(JSON.parse(ans)).length > 0;
+                            } catch {
+                              hasAns = false;
+                            }
+                          }
+                          if (item.type === "matching") {
+                            try {
+                              hasAns = Object.keys(JSON.parse(ans)).length > 0;
+                            } catch {
+                              hasAns = false;
+                            }
+                          }
+                          const isActive = idx === safeIndex;
+                          const isFlagged = !!flaggedQuestions[item.id];
+
+                          let bubbleStyle = "bg-white text-slate-800 border-2 border-slate-300 hover:border-slate-400 font-bold hover:bg-slate-50";
+                          if (isActive) {
+                            bubbleStyle = "bg-indigo-100 border-2 border-indigo-600 text-indigo-950 font-black ring-2 ring-indigo-400 shadow-sm scale-105 z-10";
+                          } else if (appMode === "training") {
+                            const isCheckedItem = !!checkedQuestions[item.id];
+                            if (isCheckedItem) {
+                              const isCorrect = checkIfQuestionIsCorrect(item, selectedAnswers[item.id]);
+                              if (isCorrect) {
+                                bubbleStyle = "bg-emerald-600 text-white border-2 border-emerald-600 font-black shadow-xs hover:bg-emerald-700";
+                              } else {
+                                bubbleStyle = "bg-rose-600 text-white border-2 border-rose-600 font-black shadow-xs hover:bg-rose-700";
+                              }
+                            } else if (hasAns) {
+                              bubbleStyle = "bg-indigo-600 text-white border-2 border-indigo-600 font-black shadow-xs hover:bg-indigo-700";
+                            }
+                          } else if (hasAns) {
+                            bubbleStyle = "bg-indigo-600 text-white border-2 border-indigo-600 font-black shadow-xs hover:bg-indigo-700";
+                          }
+
+                          return (
+                            <button
+                              key={item.id}
+                              type="button"
+                              onClick={() => {
+                                setDirection(idx > safeIndex ? 1 : -1);
+                                setCurrentIndex(idx);
+                              }}
+                              className={`h-9 rounded-xl border text-xs font-mono flex items-center justify-center transition active:scale-95 relative cursor-pointer ${bubbleStyle}`}
+                              title={`Câu ${idx + 1}${hasAns ? " (Đã làm)" : " (Chưa làm)"}${isFlagged ? " - Đã gắn cờ" : ""}`}
+                            >
+                              <span>{idx + 1}</span>
+                              {isFlagged && (
+                                <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-rose-500 rounded-full border border-white flex items-center justify-center text-[7px] text-white">
+                                  🚩
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Legend */}
+                    {appMode === "training" ? (
+                      <div className="border-t border-slate-200 pt-3 space-y-1.5 text-[11px] font-semibold text-slate-600">
+                        <div className="flex items-center justify-between">
+                          <span className="flex items-center gap-1.5">
+                            <span className="w-3.5 h-3.5 rounded bg-emerald-600 border border-emerald-600 inline-block" />
+                            Đúng
+                          </span>
+                          <span className="flex items-center gap-1.5">
+                            <span className="w-3.5 h-3.5 rounded bg-rose-600 border border-rose-600 inline-block" />
+                            Chưa đúng
+                          </span>
+                          <span className="flex items-center gap-1.5">
+                            <span className="w-3.5 h-3.5 rounded bg-indigo-600 border border-indigo-600 inline-block" />
+                            Đã chọn
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="flex items-center gap-1.5">
+                            <span className="w-3.5 h-3.5 rounded bg-white border-2 border-slate-300 inline-block" />
+                            Chưa làm
+                          </span>
+                          <span className="flex items-center gap-1.5">
+                            <span className="w-3.5 h-3.5 rounded bg-indigo-100 border-2 border-indigo-600 inline-block" />
+                            Đang xem
+                          </span>
+                          <span className="flex items-center gap-1.5">
+                            <span className="w-3.5 h-3.5 rounded bg-rose-500 inline-block text-[8px] text-white text-center leading-3">🚩</span>
+                            Đã gắn cờ
+                          </span>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="border-t border-slate-200 pt-3 space-y-1.5 text-[11px] font-semibold text-slate-600">
+                        <div className="flex items-center justify-between">
+                          <span className="flex items-center gap-1.5">
+                            <span className="w-3.5 h-3.5 rounded bg-indigo-600 border border-indigo-600 inline-block" />
+                            Đã trả lời
+                          </span>
+                          <span className="flex items-center gap-1.5">
+                            <span className="w-3.5 h-3.5 rounded bg-white border-2 border-slate-300 inline-block" />
+                            Chưa làm
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="flex items-center gap-1.5">
+                            <span className="w-3.5 h-3.5 rounded bg-indigo-100 border-2 border-indigo-600 inline-block" />
+                            Đang xem
+                          </span>
+                          <span className="flex items-center gap-1.5">
+                            <span className="w-3.5 h-3.5 rounded bg-rose-500 inline-block text-[8px] text-white text-center leading-3">🚩</span>
+                            Đã gắn cờ
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Quick Action Button at bottom of sidebar */}
+                  <div className="mt-4 pt-3 border-t-2 border-slate-200">
+                    {appMode === "training" ? (
+                      <button
+                        type="button"
+                        onClick={handleFinishTraining}
+                        className="w-full py-3 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-mono font-black text-xs md:text-sm uppercase tracking-wide shadow-sm transition active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        <Award className="w-4 h-4" />
+                        HOÀN THÀNH BÀI ÔN ({checkedCount}/{activeQuestions.length})
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={handleSubmitTestingExam}
+                        className="w-full py-3 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-mono font-black text-xs md:text-sm uppercase tracking-wide shadow-sm transition active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        <Award className="w-4 h-4" />
+                        NỘP BÀI THI ({answeredCount}/{activeQuestions.length})
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
             );
           })()}
 

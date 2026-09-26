@@ -133,6 +133,41 @@ export const EditQuestionModal: React.FC<EditQuestionModalProps> = ({
     setMatchingPairs(matchingPairs.filter((_, i) => i !== idx));
   };
 
+  const updateYesNoStatement = (
+    index: number,
+    field: "text" | "correct",
+    value: string
+  ) => {
+    setYesNoStatements((prev) => {
+      const copy = [...prev];
+      if (field === "text") {
+        copy[index] = { ...copy[index], text: value };
+      } else {
+        copy[index] = { ...copy[index], correct: value as "True" | "False" };
+      }
+      return copy;
+    });
+  };
+
+  const addYesNoStatement = () => {
+    if (yesNoStatements.length >= 10) {
+      alert("Tối đa 10 phát biểu cho một câu hỏi.");
+      return;
+    }
+    setYesNoStatements((prev) => [
+      ...prev,
+      { text: "", correct: "True" }
+    ]);
+  };
+
+  const removeYesNoStatement = (index: number) => {
+    if (yesNoStatements.length <= 2) {
+      alert("Cần tối thiểu 2 phát biểu.");
+      return;
+    }
+    setYesNoStatements((prev) => prev.filter((_, i) => i !== index));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -398,31 +433,85 @@ export const EditQuestionModal: React.FC<EditQuestionModalProps> = ({
             )}
 
             {qType === "yes_no" && (
-              <div className="p-4 bg-slate-50/70 dark:bg-slate-850/40 border border-slate-200/80 dark:border-slate-800 rounded-xl space-y-2">
-                <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                  Đáp án chuẩn cho câu Đúng/Sai:
-                </span>
-                <div className="flex items-center gap-4">
-                  <label className="flex items-center gap-2 text-xs font-bold text-emerald-700 dark:text-emerald-400 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="yesNoCorrectEdit"
-                      checked={yesNoCorrect === "True"}
-                      onChange={() => setYesNoCorrect("True")}
-                      className="text-emerald-600 focus:ring-emerald-500"
-                    />
-                    <span>Đúng (True / Yes)</span>
-                  </label>
-                  <label className="flex items-center gap-2 text-xs font-bold text-rose-700 dark:text-rose-400 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="yesNoCorrectEdit"
-                      checked={yesNoCorrect === "False"}
-                      onChange={() => setYesNoCorrect("False")}
-                      className="text-rose-600 focus:ring-rose-500"
-                    />
-                    <span>Sai (False / No)</span>
-                  </label>
+              <div className="space-y-3 p-4 bg-slate-50/70 dark:bg-slate-850/40 border border-slate-200/80 dark:border-slate-800 rounded-xl">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                    Các phát biểu Đúng / Sai:
+                  </span>
+                  <button
+                    type="button"
+                    onClick={addYesNoStatement}
+                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-400 text-[11px] font-bold hover:bg-indigo-100 transition"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Thêm phát biểu
+                  </button>
+                </div>
+
+                <div className="space-y-2">
+                  {yesNoStatements.map((statement, index) => (
+                    <div
+                      key={index}
+                      className="grid grid-cols-[1fr_65px_65px_30px] gap-2 items-center p-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="w-6 h-6 shrink-0 rounded-md bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-400 flex items-center justify-center text-[10px] font-mono font-bold">
+                          {index + 1}
+                        </span>
+                        <input
+                          type="text"
+                          value={statement.text}
+                          onChange={(e) =>
+                            updateYesNoStatement(index, "text", e.target.value)
+                          }
+                          placeholder={`Nội dung phát biểu ${index + 1}...`}
+                          className="w-full px-2 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded text-xs font-medium text-slate-800 dark:text-slate-200 focus:outline-none focus:border-indigo-500"
+                        />
+                      </div>
+
+                      <label className="flex flex-col items-center justify-center gap-0.5 cursor-pointer">
+                        <input
+                          type="radio"
+                          name={`edit-yesno-${index}`}
+                          value="True"
+                          checked={statement.correct === "True"}
+                          onChange={() =>
+                            updateYesNoStatement(index, "correct", "True")
+                          }
+                          className="w-4 h-4 accent-emerald-600 cursor-pointer"
+                        />
+                        <span className="text-[9px] font-black text-emerald-700 dark:text-emerald-400 uppercase">
+                          Đúng
+                        </span>
+                      </label>
+
+                      <label className="flex flex-col items-center justify-center gap-0.5 cursor-pointer">
+                        <input
+                          type="radio"
+                          name={`edit-yesno-${index}`}
+                          value="False"
+                          checked={statement.correct === "False"}
+                          onChange={() =>
+                            updateYesNoStatement(index, "correct", "False")
+                          }
+                          className="w-4 h-4 accent-rose-600 cursor-pointer"
+                        />
+                        <span className="text-[9px] font-black text-rose-700 dark:text-rose-400 uppercase">
+                          Sai
+                        </span>
+                      </label>
+
+                      <button
+                        type="button"
+                        onClick={() => removeYesNoStatement(index)}
+                        disabled={yesNoStatements.length <= 2}
+                        className="p-1 text-slate-400 hover:text-rose-600 disabled:opacity-30 disabled:cursor-not-allowed"
+                        title="Xóa phát biểu"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
                 </div>
               </div>
             )}

@@ -822,6 +822,7 @@ export const apiService = {
     order?: number;
     createdBy?: string;
   }): Promise<IC3Question> {
+    const orderNum = typeof q.order === "number" ? q.order : (typeof (q as any).questionNumber === "number" ? (q as any).questionNumber : undefined);
     const newQ: IC3Question = {
       id: `custom-q-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
       levelId: q.levelId,
@@ -834,7 +835,7 @@ export const apiService = {
       ...(q.statements && q.statements.length > 0 ? { statements: q.statements } : {}),
       ...(q.pairs && q.pairs.length > 0 ? { pairs: q.pairs } : {}),
       ...(q.explanation ? { explanation: q.explanation } : {}),
-      ...(typeof q.order === "number" ? { order: q.order } : {})
+      ...(typeof orderNum === "number" ? { order: orderNum, questionNumber: orderNum } : {})
     };
 
     // 1. Save directly to Cloud Firestore so all computers see it immediately
@@ -866,6 +867,8 @@ export const apiService = {
     const existingIndex = questions.findIndex((item) => item.id === questionId);
     const existing = existingIndex >= 0 ? questions[existingIndex] : null;
 
+    const finalOrder = q.order !== undefined ? q.order : ((q as any).questionNumber !== undefined ? (q as any).questionNumber : (existing?.order ?? existing?.questionNumber));
+
     const updatedQ: IC3Question = {
       id: questionId,
       levelId: q.levelId || existing?.levelId || "level-1",
@@ -878,7 +881,7 @@ export const apiService = {
       ...(q.statements && q.statements.length > 0 ? { statements: q.statements } : existing?.statements ? { statements: existing.statements } : {}),
       ...(q.pairs && q.pairs.length > 0 ? { pairs: q.pairs } : existing?.pairs ? { pairs: existing.pairs } : {}),
       ...(q.explanation !== undefined ? { explanation: q.explanation } : existing?.explanation ? { explanation: existing.explanation } : {}),
-      ...(q.order !== undefined ? { order: q.order } : existing?.order !== undefined ? { order: existing.order } : {})
+      ...(finalOrder !== undefined ? { order: finalOrder, questionNumber: finalOrder } : {})
     };
 
     // 1. Update in Cloud Firestore

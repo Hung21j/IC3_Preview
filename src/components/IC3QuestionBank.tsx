@@ -139,6 +139,7 @@ export default function IC3QuestionBank({
   const [timeElapsed, setTimeElapsed] = useState(0);
   const [isTimerActive, setIsTimerActive] = useState(false);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const lastScrollTimeRef = useRef<number>(0);
 
   // Active question answers for currently selected set
   const [selectedAnswers, setSelectedAnswers] = useState<Record<string, string>>({});
@@ -470,17 +471,36 @@ export default function IC3QuestionBank({
 
   // Auto-scroll handler during drag-and-drop when mouse/drag reaches viewport boundary
   const handleDragAutoScroll = (e: React.DragEvent) => {
-    if (!e.clientY) return;
-    const threshold = 120;
-    const scrollStep = 22;
+    if (!e.clientY || e.clientY <= 0) return;
 
-    const mainContainer = document.querySelector("main");
-    if (e.clientY > window.innerHeight - threshold) {
-      if (mainContainer) mainContainer.scrollTop += scrollStep;
-      window.scrollBy({ top: scrollStep, behavior: "auto" });
-    } else if (e.clientY < threshold) {
-      if (mainContainer) mainContainer.scrollTop -= scrollStep;
-      window.scrollBy({ top: -scrollStep, behavior: "auto" });
+    // Rate-limit auto-scroll trigger (at most once every 50ms) to avoid runaway scrolling
+    const now = performance.now();
+    if (now - lastScrollTimeRef.current < 50) return;
+
+    // Greatly reduced sensitivity: only activate when cursor is within 45px of viewport edge
+    const threshold = 45;
+    const maxScrollStep = 6; // gentle step instead of 22px
+
+    const clientY = e.clientY;
+    const windowH = window.innerHeight;
+
+    let step = 0;
+    if (clientY > windowH - threshold) {
+      const ratio = Math.min(1, (clientY - (windowH - threshold)) / threshold);
+      step = Math.ceil(ratio * maxScrollStep);
+    } else if (clientY < threshold) {
+      const ratio = Math.min(1, (threshold - clientY) / threshold);
+      step = -Math.ceil(ratio * maxScrollStep);
+    }
+
+    if (step !== 0) {
+      lastScrollTimeRef.current = now;
+      const mainContainer = document.querySelector("main");
+      if (mainContainer && mainContainer.scrollHeight > mainContainer.clientHeight) {
+        mainContainer.scrollTop += step;
+      } else {
+        window.scrollBy({ top: step, behavior: "auto" });
+      }
     }
   };
 
@@ -1594,10 +1614,12 @@ export default function IC3QuestionBank({
                       {q.type === "matching" && q.pairs && (
                         <div className="space-y-4 pt-1">
 
-                          <div className="grid grid-cols-1 xl:grid-cols-12 gap-4 items-stretch">
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-4 items-start">
                             {/* Left Column: Terms to Match */}
-                            <div className="xl:col-span-7 space-y-3">
-                              <span className="text-xs font-black text-slate-800 block uppercase font-mono tracking-wider">DANH SÁCH THUẬT NGỮ</span>
+                            <div className="md:col-span-1 lg:col-span-7 space-y-3">
+                              <span className="text-xs font-black text-slate-800 block uppercase font-mono tracking-wider">
+                                DANH SÁCH THUẬT NGỮ ({q.pairs.length})
+                              </span>
                               {q.pairs.map((pair) => {
                                 const matchedDef = (() => {
                                   try {
@@ -1628,7 +1650,7 @@ export default function IC3QuestionBank({
                                 return (
                                   <div 
                                     key={pair.left} 
-                                    className="flex flex-col sm:flex-row items-stretch gap-3 bg-white p-3.5 rounded-xl border-2 border-slate-200 transition-all hover:border-slate-300 shadow-xs"
+                                    className="flex flex-col sm:flex-row items-stretch gap-2.5 bg-white p-3 rounded-xl border-2 border-slate-200 transition-all hover:border-slate-300 shadow-xs"
                                     onDragOver={(e) => {
                                       handleDragOver(e);
                                       handleDragAutoScroll(e);
@@ -1636,7 +1658,7 @@ export default function IC3QuestionBank({
                                     onDrop={(e) => handleDrop(e, pair.left)}
                                   >
                                     {/* Term description */}
-                                    <div className="sm:w-2/5 xl:w-1/3 flex items-center justify-center p-3 bg-indigo-600 text-white rounded-lg shadow-xs shrink-0 font-mono font-bold text-xs sm:text-sm text-center break-words">
+                                    <div className="sm:w-1/3 min-w-[95px] flex items-center justify-center p-2.5 bg-indigo-600 text-white rounded-lg shadow-xs shrink-0 font-mono font-bold text-xs sm:text-sm text-center break-words">
                                       <span>{pair.left}</span>
                                     </div>
 
@@ -1651,7 +1673,7 @@ export default function IC3QuestionBank({
                                           handleUnmatch(pair.left);
                                         }
                                       }}
-                                      className={`flex-1 min-h-[58px] p-3 rounded-lg border text-xs sm:text-sm leading-relaxed cursor-pointer transition flex items-center justify-between gap-2.5 relative select-none break-words ${slotStyle}`}
+                                      className={`flex-1 min-h-[58px] p-2.5 rounded-lg border text-xs sm:text-sm leading-relaxed cursor-pointer transition flex items-center justify-between gap-2.5 relative select-none break-words ${slotStyle}`}
                                     >
                                       {matchedDef ? (
                                         <>
@@ -1682,7 +1704,7 @@ export default function IC3QuestionBank({
                             </div>
 
                             {/* Right Column: Unassigned pool of definitions */}
-                            <div className="xl:col-span-5 flex flex-col space-y-3">
+                            <div className="md:col-span-1 lg:col-span-5 flex flex-col space-y-3">
                               <div className="flex items-center justify-between">
                                 <span className="text-xs font-black text-slate-800 block uppercase font-mono tracking-wider">
                                   ĐỊNH NGHĨA CHỜ GHÉP ({matchingPool.filter(p => {
@@ -1706,7 +1728,7 @@ export default function IC3QuestionBank({
                               </div>
 
                               <div className="text-[11px] font-semibold text-indigo-900 bg-indigo-50 border border-indigo-200 p-2.5 rounded-xl flex items-center gap-2">
-                                <span>💡 <b>Mẹo:</b> Nhấn giữ chuột vào đáp án để kéo (kéo sát mép màn hình sẽ tự cuộn trang), hoặc nhấp chuột chọn đáp án rồi nhấp vào ô thuật ngữ cần ghép!</span>
+                                <span>💡 <b>Mẹo:</b> Kéo thả hoặc nhấp chọn đáp án rồi nhấp vào ô thuật ngữ cần ghép!</span>
                               </div>
 
                               <div className="flex-1 space-y-2.5 max-h-[480px] overflow-y-auto pr-1 bg-slate-100 p-3 rounded-xl border-2 border-slate-300 min-h-[220px]">
@@ -1887,7 +1909,7 @@ export default function IC3QuestionBank({
 
               {/* RIGHT COLUMN: QUESTION GRID SIDEBAR FOR BOTH TRAINING & TESTING MODES */}
               {(appMode === "testing" || appMode === "training") && (
-                <div className="w-full lg:w-80 border-t-2 lg:border-t-0 lg:border-l-2 border-slate-300 bg-slate-50/95 p-4 sm:p-5 flex flex-col justify-between shrink-0 overflow-y-auto">
+                <div className="w-full lg:w-72 xl:w-80 border-t-2 lg:border-t-0 lg:border-l-2 border-slate-300 bg-slate-50/95 p-4 sm:p-5 flex flex-col justify-between shrink-0 overflow-y-auto">
                   <div className="space-y-4">
                     {/* Title & Stats */}
                     <div className="flex items-center justify-between border-b-2 border-slate-200 pb-3">
